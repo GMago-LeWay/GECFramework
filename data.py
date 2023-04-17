@@ -23,7 +23,6 @@ from transformers import AutoTokenizer
 from config import Config
 from config import MODEL_CORR_DATA, DATA_ROOT_DIR, DATA_DIR_NAME, MODEL_ROOT_DIR
 from utils.tools import get_time, dict_to_str, is_chinese
-from augmentation import ErrorType
 
 from dataset_provider.FCGEC import JointDataset
 from dataset_provider.FCGEC_transform import min_dist_opt
@@ -31,7 +30,6 @@ from dataset_provider.GECToR import DatasetCTC
 
 from utils.MuCGEC import DataTrainingArguments, load_json, FullTokenizer, convert_to_unicode
 from dataset_provider.FCGEC import TextWash, TaggerConverter, combine_insert_modify, convert_tagger2generator
-from dataset_provider.MuCGEC import convert_data_from_data_list, get_data_reader
 
 logger = logging.getLogger(__name__)
 
@@ -413,6 +411,7 @@ class MuCGECEditDataset(TextLabelDataset):
         self.args = args
         self.config = config
         self.tokenizer = FullTokenizer(vocab_file=config.vocab_file, do_lower_case=False)
+        
 
     def segment_bert(self, line):
         line = line.strip()
@@ -433,6 +432,7 @@ class MuCGECEditDataset(TextLabelDataset):
             data_list[i]["text"] = self.segment_bert(data_list[i]["text"])
             data_list[i]["label"] = self.segment_bert(data_list[i]["label"])
 
+        from dataset_provider.MuCGEC import convert_data_from_data_list
         convert_data_from_data_list(data_list, save_path, self.config.vocab_path, 5, False, 32)
 
     def preprocess_data(self):
@@ -450,6 +450,7 @@ class MuCGECEditDataset(TextLabelDataset):
 
     def train_val_test_data(self):
         weights_name = self.config.pretrained_model
+        from dataset_provider.MuCGEC import get_data_reader
         reader = get_data_reader(weights_name, self.config.max_len, skip_correct=bool(self.config.skip_correct),
                                 skip_complex=self.config.skip_complex,
                                 test_mode=False,
@@ -501,7 +502,7 @@ class GECToRDataset(TextLabelDataset):
         train_dataset = DatasetCTC(in_model_dir=self.config.pretrained_model,
                             src_texts=[item['text'] for item in train],
                             trg_texts=[item['label'] for item in train],
-                            max_seq_len=self.config.max_seq_len,
+                            max_seq_len=self.config.text_cut,
                             ctc_label_vocab_dir=self.config.ctc_vocab_dir,
                             correct_tags_file=self.config.correct_tags_file,
                             detect_tags_file=self.config.detect_tags_file,
@@ -510,7 +511,7 @@ class GECToRDataset(TextLabelDataset):
         dev_dataset = DatasetCTC(in_model_dir=self.config.pretrained_model,
                             src_texts=[item['text'] for item in val],
                             trg_texts=[item['label'] for item in val],
-                            max_seq_len=self.config.max_seq_len,
+                            max_seq_len=self.config.text_cut,
                             ctc_label_vocab_dir=self.config.ctc_vocab_dir,
                             correct_tags_file=self.config.correct_tags_file,
                             detect_tags_file=self.config.detect_tags_file,
@@ -983,6 +984,7 @@ class Augment(TextLabelDataset):
         return data
     
     def process_raw_file(self):
+        from augmentation import ErrorType
         type_detector = ErrorType()
         assert os.path.exists(self.raw_file)
         with open(self.raw_file, "r") as f:
@@ -1048,6 +1050,7 @@ class FangZhengAugment(TextLabelDataset):
         return data
 
     def filter_raw_file(self):
+        from augmentation import ErrorType
         type_detector = ErrorType()
         assert os.path.exists(self.raw_file)
         with open(self.raw_file, "r") as f:

@@ -1,26 +1,20 @@
-from trainers.base import Trainer
-from trainers.SoftMaskedBert import SoftMaskedBertTrainer
-from trainers.MaskLM import MaskLMTrain
-from trainers.JointSTG import JointTrainer
-from trainers.Seq2Seq import Seq2SeqModelTrainer
-from trainers.Seq2Edit import Seq2EditTrainer
-from trainers.CausalLM import CausalLMTrain
-from trainers.Llama import LlamaTrainer
-from trainers.GECToR import GECToRTrainer
+import importlib
 
-def get_train(model) -> Trainer:
-    TRAIN_MAP = {
-        'bert': MaskLMTrain,
-        'softmaskedbert': SoftMaskedBertTrainer,
-        'stgjoint': JointTrainer,
-        'seq2seq': Seq2SeqModelTrainer,
-        'seq2edit': Seq2EditTrainer,
-        'gector': GECToRTrainer,
-        'llm': CausalLMTrain,
-        'llama': LlamaTrainer,
-        'llama_quant': LlamaTrainer,
-    }
+MODULE_MAP = {
+    'bert': ('trainers.MaskLM', 'MaskLMTrain'),
+    'softmaskedbert': ('trainers.SoftMaskedBert', 'SoftMaskedBertTrainer'),
+    'stgjoint': ('trainers.JointSTG', 'JointTrainer'),
+    'seq2seq': ('trainers.Seq2Seq', 'Seq2SeqModelTrainer'),
+    'seq2edit': ('trainers.Seq2Edit', 'Seq2EditTrainer'),
+    'gector': ('trainers.GECToR', 'GECToRTrainer'),
+    'llm': ('trainers.CausalLM', 'CausalLMTrain'),
+    'llama': ('trainers.Llama', 'LlamaTrainer'),
+    'llama_quant': ('trainers.Llama', 'LlamaTrainer'),
+}
 
-    assert model in TRAIN_MAP.keys(), 'Not support ' + model
 
-    return TRAIN_MAP[model]
+def get_train(model):
+    assert model in MODULE_MAP.keys(), 'Not support ' + model
+    module_name, class_name = MODULE_MAP[model]
+    train_class = getattr(importlib.import_module(module_name), class_name)
+    return train_class

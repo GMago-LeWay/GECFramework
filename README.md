@@ -26,21 +26,17 @@ main.py的args参数说明：
 - hybridset/fangzhengtest/peopledaily/augment
 - 数据集需要在config.py里指定目录
 
---model_save_dir 模型存储的根目录，会按log_order指定的数字生成子目录train_{log_order}存储训练过程中产生的中间checkpoint
+--pre_save_dir 结果存储的根目录，每次运行程序会产生一个模型-数据集-对应时间的目录，实验结果、测试与推断结果都会存储在这里
 
---res_save_dir 结果存储的目录，实验结果、测试与推断结果都会存储在这里
+--devices 使用的多卡环境，相当于CUDA_VISIBLE_DEVICES（某些可多卡训练的模型需要指定，e.g. seq2seq）
 
 --device 使用的GPU的序号
 
---load 加载模型checkpoint的路径，加载的文件对应的模型要与--model指定的模型配置一致
+--load 加载模型checkpoint的路径，一般加载的是训练产生结果的目录
 
 - TODO: 加载优化器
 
---log_order 存储日志的序号和存储模型checkpoint的子目录序号，防止相同模型相同数据训练时冲突
 
-- 日志存储于log目录下，按照任务-模型-数据集-order命名
-
---csv_order 存储实验效果的表格文件的序号
 
 --data_save_dir 执行数据增广任务时，数据的存储路径
 

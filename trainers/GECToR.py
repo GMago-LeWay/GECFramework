@@ -7,7 +7,8 @@ import numpy as np
 from torch.cuda.random import device_count
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from transformers import AdamW, get_linear_schedule_with_warmup
+from transformers import get_linear_schedule_with_warmup
+from torch.optim import AdamW
 from tensorboardX import SummaryWriter
 
 from metrics import GECMetric
@@ -78,15 +79,16 @@ class GECToRTrainer(Trainer):
         with open(os.path.join(config.ctc_vocab_dir, config.correct_tags_file), "r") as fp:
             vocab_szie = len(fp.read().strip().split("\n"))
         config.correct_vocab_size = vocab_szie
+        logger.info(f"Correct Tag Num: {vocab_szie}")
 
         # get dataset config (by initialize an empty dataset)
-        empty_dataset = DatasetCTC(in_model_dir=self.config.pretrained_model,
+        empty_dataset = DatasetCTC(in_model_dir=self.args.pretrained_model,
                             src_texts=[],
                             trg_texts=[],
-                            max_seq_len=self.config.text_cut,
-                            ctc_label_vocab_dir=self.config.ctc_vocab_dir,
-                            correct_tags_file=self.config.correct_tags_file,
-                            detect_tags_file=self.config.detect_tags_file,
+                            max_seq_len=self.args.text_cut,
+                            ctc_label_vocab_dir=self.args.ctc_vocab_dir,
+                            correct_tags_file=self.args.correct_tags_file,
+                            detect_tags_file=self.args.detect_tags_file,
                             _loss_ignore_id=-100)
         self.id2label = empty_dataset.id2ctag
 
@@ -137,7 +139,15 @@ class GECToRTrainer(Trainer):
                     writer.add_scalar('data/correct_loss', batch_correct_loss.item(), global_step)
                     writer.add_scalar('data/loss', batch_loss.item(), global_step)
 
-                if global_step % eval_step == 0:
+                do_val = False
+                if eval_step:
+                    if global_step % eval_step == 0:
+                        do_val = True
+                else:         # eval_step = None, do validation every epoch
+                    if step == len(train_dataloader) - 1:
+                        do_val = True
+                
+                if do_val:
                     dev_metric = self.do_test(val_dataloader, mode='VAL')
                     d_f1 = dev_metric["d_f1"]
                     c_f1 = dev_metric["c_f1"]

@@ -1,26 +1,20 @@
-from models.BERT import BERT
-from models.SoftMaskedBert import GRUSoftMaskedBERT
-from models.JointSTG import JointModel
-from models.Seq2Seq import Seq2SeqModel
-from models.Seq2Edit import Seq2EditModel
-from models.CausalLM import CausalLM
-from models.Llama import LlamaNormal7B, LlamaQuant
-from models.GECToR import ModelingCtcBert
+import importlib
+
+MODULE_MAP = {
+    'bert': ('models.BERT', 'BERT'),
+    'softmaskedbert': ('models.SoftMaskedBert', 'GRUSoftMaskedBERT'),
+    'stgjoint': ('models.JointSTG', 'JointModel'),
+    'seq2seq': ('models.Seq2Seq', 'Seq2SeqModel'),
+    'seq2edit': ('models.Seq2Edit', 'Seq2EditModel'),
+    'gector': ('models.GECToR', 'ModelingCtcBert'),
+    'llm': ('models.CausalLM', 'CausalLM'),
+    'llama': ('models.Llama', 'LlamaNormal7B'),
+    'llama_quant': ('models.Llama', 'LlamaQuant'),
+}
 
 
 def get_model(model):
-    MODEL_MAP = {
-        'bert': BERT,
-        'softmaskedbert': GRUSoftMaskedBERT,
-        'stgjoint': JointModel,
-        'seq2seq': Seq2SeqModel,
-        'seq2edit': Seq2EditModel,
-        'gector': ModelingCtcBert,
-        'llm': CausalLM,
-        'llama': LlamaNormal7B,
-        'llama_quant': LlamaQuant,
-    }
-
-    assert model in MODEL_MAP.keys(), 'Not support ' + model
-
-    return MODEL_MAP[model]
+    assert model in MODULE_MAP.keys(), 'Not support ' + model
+    module_name, class_name = MODULE_MAP[model]
+    model_class = getattr(importlib.import_module(module_name), class_name)
+    return model_class

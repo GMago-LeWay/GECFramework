@@ -10,6 +10,7 @@ import logging
 import argparse
 import time
 import os
+import importlib
 import traceback
 from tqdm import tqdm
 
@@ -366,9 +367,10 @@ class ExperimentsOfLLM:
 
 
 class ExperimentsOfGECAugmentation:
-    def __init__(self, args) -> None:
+    def __init__(self, args, augmentor) -> None:
         self.args = args
         self.config = Config(model=self.args.model, dataset=self.args.dataset).get_config()
+        self.augmentor = augmentor
 
     def data_filter(self, data):
         new_data = []
@@ -389,13 +391,14 @@ class ExperimentsOfGECAugmentation:
     
     def augment(self):
         setup_seed(20)
+        augmentation = importlib.import_module('augmentation')
         dataset_ = get_data(self.args.dataset, self.args.model)(args=self.args, config=self.config)
         print(get_time() + "Load Raw Data...")
         data = dataset_.data()[:1000000]
         print(get_time() + "Data Loaded. Filtering...")
         data = self.data_filter([item['label'] for item in data])
 
-        augmenter = get_augmentation('clg')(self.args, self.config)
+        augmenter = augmentation.get_augmentation('clg')(self.args, self.config)
         json_results = augmenter.static_augment(data)
         save_path = self.args.data_save_dir
         if not os.path.exists(save_path):
@@ -430,7 +433,6 @@ if __name__ == '__main__':
         experiment = EXPERIMENTS[args.model](args)
         experiment.conduct()
     elif args.task_mode in ['augmentation']:
-        from augmentation import get_augmentation
         augment = ExperimentsOfGECAugmentation(args)
         augment.augment()
     else:

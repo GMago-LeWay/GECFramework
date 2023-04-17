@@ -1,0 +1,22 @@
+allennlp
+conda install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
+matplotlib
+pandas
+xlsxwriter
+xpinyin
+jieba
+pypinyin
+opencc
+synonyms
+datasets
+Levenshtein
+# allennlp
+overrides
+rouge
+chardet
+bs4
+cchardet
+transformers==4.28.1
+gptq
+pyllama
+thulac

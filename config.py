@@ -234,7 +234,7 @@ class Config:
     def __GECToR_Data(self):
         dataConfig = {
             'text_cut': 256,
-            'batch_size': 32,
+            'batch_size': 64,
             'eval_step': None,        # steps interval of evaluation, None: 1eval/epoch   
         }
 
