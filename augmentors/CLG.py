@@ -11,10 +11,8 @@ from functools import wraps, lru_cache
 import synonyms
 import time
 
-def get_time():
-    localTime = time.localtime(time.time()) 
-    strTime = '[' + time.strftime("%Y-%m-%d %H:%M:%S", localTime) + '] ' 
-    return strTime
+logger = logging.getLogger(__name__)
+
 ########## segmentor.py ###############
 
 # n/名词 np/人名 ns/地名 ni/机构名 nz/其它专名
@@ -562,33 +560,33 @@ class CLGAugmentor:
 
     def static_augment(self, sentences, shuffle=True):
         data_len = len(sentences)
-        logger.info(get_time() + f"Raw data used in augmentation: {data_len}")
+        logger.info(f"Raw data used in augmentation: {data_len}")
         # proportions for six classes of augmentation type
         proportion = [0.16, 0.16, 0.16, 0.16, 0.16, 0.16]
         accumulate = [int(data_len * sum(proportion[:i+1])) for i in range(6)]
 
         res = []
-        logger.info(get_time() + "Type1...")
+        logger.info("Type1...")
         for i in tqdm(range(0, accumulate[0])):
             res.extend(self.augmentors[0].augment(sentence=sentences[i]))
-        logger.info(get_time() + "Type2...")
+        logger.info("Type2...")
         for i in tqdm(range(accumulate[0], accumulate[1])):
             res.extend(self.augmentors[1].augment(sentence=sentences[i]))
-        logger.info(get_time() + "Type3...")
+        logger.info("Type3...")
         for i in tqdm(range(accumulate[1], accumulate[2])):
             res.extend(self.augmentors[2].augment(sentence=sentences[i]))
-        logger.info(get_time() + "Type4...")
+        logger.info("Type4...")
         for i in tqdm(range(accumulate[2], accumulate[3])):
             res.extend(self.augmentors[3].augment(sentence=sentences[i]))
-        logger.info(get_time() + "Type5...")
+        logger.info("Type5...")
         for i in tqdm(range(accumulate[3], accumulate[4])):
             res.extend(self.augmentors[4].augment(sentence=sentences[i]))
-        logger.info(get_time() + "Type6...")
+        logger.info("Type6...")
         for i in tqdm(range(accumulate[4], accumulate[5])):
             res.extend(self.augmentors[5].augment(sentence=sentences[i]))
 
         if shuffle:
-            logger.info(get_time() + "Shuffling...")
+            logger.info("Shuffling...")
             random.shuffle(res)
 
         return res
