@@ -1,0 +1,662 @@
+import random
+import logging
+import os
+from utils.JointSTG import TAGGER_MAP
+
+class Storage(dict):
+    """
+    A Storage object is like a dictionary except `obj.foo` can be used inadition to `obj['foo']`
+    ref: https://blog.csdn.net/a200822146085/article/details/88430450
+    """
+    def __getattr__(self, key):
+        try:
+            return self[key]
+        except KeyError as k:
+            raise AttributeError(k)
+
+    def __setattr__(self, key, value):
+        self[key] = value
+
+    def __delattr__(self, key):
+        try:
+            del self[key]
+        except KeyError as k:
+            raise AttributeError(k)
+
+    def __str__(self):
+        return "<" + self.__class__.__name__ + dict.__repr__(self) + ">"
+
+
+DATA_DIR_NAME = {
+    'nlpcc2018task2': "NLPCC2018_GEC",
+    'fcgec': "FCGEC",
+    'fcgec_seq2seq': "FCGEC",  # only used in FCGEC
+    'mucgec': "MuCGEC",
+    'hybridset': "HybridSet",
+    'fangzhenggrammar': "FangZhengGrammar",
+    'fangzhengspell': "FangZhengSpell",
+    'guangming': "Corpus/GuangMing",
+    'peopledaily': "Corpus/PeopleDaily",
+    'augment': "clg-augment",
+    'fangzhengaugment': "FangZhengAugment",
+    'fangzhengdapei': "FangZhengDapei",
+}
+
+MODEL_CORR_DATA = {
+    'stgjoint': 'joint',
+    'seq2seq': 'mucgec_seq2seq',
+    'seq2edit': 'mucgec_edit',
+    'gector': 'gector_data',
+}
+
+DATA_ROOT_DIR = '/home/liwei/workspace/datasets'
+MODEL_ROOT_DIR = '/home/liwei/workspace/models'
+
+class Config:
+    def __init__(self, model: str, dataset: str, tune=False, preconfig=None) -> None:
+        self.model_name = model
+        self.dataset = dataset
+        self.preconfig = preconfig
+        self.tune = tune
+
+        self.MODEL_MAP = {
+            'bert': self.__BERT,
+            'softmaskedbert': self.__SoftMaskedBERT,
+            'stgjoint': self.__STG_Joint,
+            'seq2seq': self.__Seq2Seq,
+            'seq2edit': self.__Seq2Edit,
+            'gector': self.__GECToR,
+            'llm': self.__LLM,
+            'llama': self.__LLAMA,
+            'llama_quant': self.__LLAMA_QUANT,
+            None: self.__NULL,
+        }
+
+        self.DATA_MAP = {
+            ## Normal data config
+            'nlpcc2018task2': self.__NLPCC2018,
+            'fcgec': self.__FCGEC,
+            'mucgec': self.__MuCGEC,
+            'hybridset': self.__HybridSet,
+            'fangzhenggrammar': self.__FangZhengTest,
+            'fangzhengspell': self.__FangZhengTest,
+            'guangming': self.__UnlabeledCorpus,
+            'peopledaily': self.__UnlabeledCorpus,
+            'augment': self.__Augment,
+            'fangzhengaugment': self.__FangZhengAugment,
+            'fangzhengdapei': self.__FangZhengDapei,
+
+            ## For special
+            'fcgec_seq2seq': self.__FCGEC_Seq2Seq,
+
+            ## Model-correlated data config
+            'joint': self.__FCGEC,
+            'mucgec_seq2seq': self.__MuCGEC,
+            'mucgec_edit': self.__MuCGEC_Edit,
+            'gector_data': self.__GECToR_Data,
+
+            None: self.__NULL,
+        }
+
+
+    def solve_conflict(self):
+        '''
+        Solve some confict between dataset args and model args. Call this function after self.args is loaded.
+        '''
+        return
+    
+    def get_data_args(self):
+        '''
+        Get dataset config. Some models require a specific dataset.
+        Here the data_dir will be reset to correct directory.
+        '''
+        self.data_dir = os.path.join(DATA_ROOT_DIR, DATA_DIR_NAME[self.dataset])
+        if self.model_name in MODEL_CORR_DATA:
+            datasetArgs = self.DATA_MAP[MODEL_CORR_DATA[self.model_name]]()
+        else:
+            datasetArgs = self.DATA_MAP[self.dataset]()
+        datasetArgs = {**{'data_dir': self.data_dir}, **datasetArgs}
+        
+        return datasetArgs
+
+    def get_model_args(self):
+        return self.MODEL_MAP[self.model_name](self.tune)
+    
+    def get_config(self):
+        commonArgs = self.get_model_args()
+        dataArgs = self.get_data_args()
+
+        self.args = Storage({**commonArgs, **dataArgs})
+        self.solve_conflict()
+        return self.args
+
+    def __NULL(self, tune=False):
+        # Configuration loaded when no model or data is specified.
+        Config = {}
+        return Config
+
+    def __UnlabeledCorpus(self):
+
+        dataConfig = {
+            'valid_percent': 0.1,
+            'test_percent': 0.15,
+            'batch_size': 32,
+            'text_cut': 384,   
+            'eval_step': None,        # steps interval of evaluation, None: 1eval/epoch
+        }
+
+        return dataConfig
+
+    def __NLPCC2018(self):
+
+        dataConfig = {
+            'valid_percent': 0.1,
+            'test_percent': 0.15,
+            'batch_size': 32,
+            'text_cut': 200,   
+            'eval_step': None,        # steps interval of evaluation, None: 1eval/epoch
+        }
+
+        return dataConfig
+
+    def __MuCGEC(self):
+        dataConfig = {
+            'train_file': os.path.join(self.data_dir, 'train.json'),
+            'validation_file': os.path.join(self.data_dir, 'valid.json'),
+            'test_file': os.path.join(self.data_dir, 'test.json'),
+            'text_cut': 200,
+
+            'batch_size': 48,  
+            'eval_step': None,        # steps interval of evaluation, None: 1eval/epoch            
+        }
+
+        return dataConfig
+
+    def __MuCGEC_Edit(self):
+        dataConfig = {
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-struct-bert-large'), 
+
+            'vocab_file': "knowledge/mucgec_data/vocab.txt",
+            'vocab_path': os.path.join(MODEL_ROOT_DIR, "chinese-struct-bert-large/output_vocabulary_chinese_char_hsk+lang8_5"),
+
+            'train_set': os.path.join(self.data_dir, 'Seq2Edit', 'train.label'),
+            'dev_set': os.path.join(self.data_dir, 'Seq2Edit', 'valid.label'),
+            # 'test_set': os.path.join(self.data_dir, 'Seq2Edit', 'test.label'),
+
+            'skip_correct': 1,
+            'skip_complex': 0,
+            'tag_strategy': 'keep_one',       # ['keep_one', 'merge_all'],
+            'tn_prob': 0,           # 保留正确句子的比例
+            'tp_prob': 1,           # 保留错误句子的比例
+            
+            'batch_size': 256,  
+            'max_len': 200,
+            'text_cut': 200,
+            'target_vocab_size': 1000,
+            'eval_step': None,        # steps interval of evaluation, None: 1eval/epoch            
+        }
+
+        return dataConfig
+
+    def __FCGEC(self):
+
+        dataConfig = {
+            'data_base_dir': f"{self.data_dir}/stg_joint",
+            'train_file': 'FCGEC_train.json',
+            'valid_file': 'FCGEC_valid.json',
+            'test_file': 'FCGEC_test.json',
+            'out_dir': 'stg_joint',
+            'out_uuid': False,       # 'Output UUID in test file'
+            'err_only': True,
+            'text_cut': 256,
+
+            # learning params
+            'batch_size': 32, 
+            'print_step': 50,
+            'eval_step': 200,      # steps interval of evaluation, None: 1eval/epoch
+        }
+
+        return dataConfig
+
+    def __FCGEC_Seq2Seq(self):
+
+        dataConfig = {
+            'train_file': 'FCGEC_train.json',
+            'valid_file': 'FCGEC_valid.json',
+            'test_file': 'FCGEC_test.json',
+            'out_uuid': True,       # 'Output UUID in test file'
+            'out_errflag': True,     #  'Whether to output `error_flag`'
+            'out_errtype': True,    # 'Whether to output `error_type`'
+        }
+
+        return dataConfig
+    
+    def __GECToR_Data(self):
+        dataConfig = {
+            'text_cut': 256,
+            'batch_size': 32,
+            'eval_step': None,        # steps interval of evaluation, None: 1eval/epoch   
+        }
+
+        return dataConfig
+
+    def __HybridSet(self):
+
+        dataConfig = {
+            'valid_percent': 0.05,
+            'test_percent': 0.20,
+            'batch_size': 32,
+            'text_cut': 256,   
+            'eval_step': 20000,        # steps interval of evaluation, None: 1eval/epoch   
+        }
+
+        return dataConfig
+
+
+    def __Augment(self):
+
+        dataConfig = {
+            'valid_percent': 0.05,
+            'test_percent': 0.15,
+            'batch_size': 128,
+            'text_cut': 256, 
+            'text_max_length': 64,
+            'filter': True,
+            'eval_step': 10000,        # steps interval of evaluation, None: 1eval/epoch
+        }
+
+        return dataConfig
+
+
+    def __FangZhengAugment(self):
+
+        dataConfig = {
+            'mix_data_dir': os.path.join(DATA_ROOT_DIR, "augment3/"),
+
+            'valid_percent': 0.05,
+            'test_percent': 0.20,
+            'batch_size': 64,
+            'text_cut': 256, 
+            'text_max_length': 128,
+            'filter': True,
+            'eval_step': 15000,        # steps interval of evaluation, None: 1eval/epoch
+        }
+
+        return dataConfig
+        
+
+    def __FangZhengTest(self):
+
+        dataConfig = {
+            'test_file': 'test.json',
+
+            'valid_percent': 0.1,
+            'test_percent': 0.15,
+            'batch_size': 8,
+            'text_cut': 384,   
+            'eval_step': None,        # steps interval of evaluation, None: 1eval/epoch
+        }
+
+        return dataConfig
+
+    def __FangZhengDapei(self):
+
+        dataConfig = {
+            'valid_percent': 0.1,
+            'test_percent': 0.15,
+            'batch_size': 32,
+            'text_cut': 384,   
+            'eval_step': None,        # steps interval of evaluation, None: 1eval/epoch
+        }
+
+        return dataConfig
+
+
+    def __BERT(self, tune):
+
+        Config = {
+            # identifier
+            'name': 'bert',
+
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-macbert-base'),
+            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
+
+            # fixed parameters
+
+            # parameters that are able to be tuned
+
+            # learning parameters
+            'max_epochs': 20,
+            'learning_rate_bert': 0.0001,
+            'learning_rate_other': 0.0001,
+            'weight_decay_bert': 0.0,
+            'weight_decay_other': 0.0,
+            'early_stop': 8,
+
+            # evaluation config
+            'metrics': 'spelling_check_1',
+            'KeyEval': 'loss',
+            'scheduler_mode': 'min',
+            'scheduler_factor': 0.2,
+            'scheduler_patience': 3,
+        }
+
+        TuneConfig = {     
+            # identifier
+            'name': 'bert',
+
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-macbert-base'),
+            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
+
+            # fixed parameters
+
+            # parameters that are able to be tuned
+
+            # learning parameters
+            'max_epochs': 20,
+            'learning_rate_bert': random.choice([0, 1e-05, 5e-5, 5e-4, 1e-3]),
+            'learning_rate_other': random.choice([1e-4, 5e-4, 0.001, 0.002]),
+            'weight_decay_bert': random.choice([0, 0.01, 0.001, 0.0001]),
+            'weight_decay_other': random.choice([0, 0.01, 0.001, 0.0001]),         
+            'early_stop': 6,
+
+            # evaluation config
+            'KeyEval': 'Loss',
+            'scheduler_mode': 'min',
+            'scheduler_factor': 0.2,
+            'scheduler_patience': 5,
+ 
+        }
+
+        return TuneConfig if tune else Config
+
+    def __Seq2Seq(self, tune):
+        Config = {
+            'name': 'seq2seq',
+
+            'do_train': True,
+            'do_eval': True,
+            'do_predict': True,
+
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'bart-large-chinese'),
+
+            'save_path': None,
+            'task': 'gec',
+
+            'gradient_accumulation_steps': 4,
+            'lr': 3e-6,
+            # 'batch_size': 32, dataset config
+            'epoch': 10,
+            'lr_scheduler': 'polynomial',
+            'save_strategy': 'epoch',
+            'predict_file': 'results',
+
+
+        }
+
+        return NotImplementedError() if tune else Config
+
+
+    def __LLM(self, tune):
+
+        Config = {
+            # identifier
+            'name': 'llm',
+
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'llama-7b-hf'),
+            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
+
+            # fixed parameters
+
+            # parameters that are able to be tuned
+
+
+            # evaluation config
+
+        }
+
+        return NotImplementedError() if tune else Config
+    
+
+    def __LLAMA(self, tune):
+
+        Config = {
+            # identifier
+            'name': 'llama',
+
+            # pretrained model
+            'language_model': False,
+            'ckpt_dir': os.path.join(MODEL_ROOT_DIR, 'pyllama_data/7B'),
+            'tokenizer_path' : os.path.join(MODEL_ROOT_DIR, 'pyllama_data/tokenizer.model'),
+
+            # evaluation config
+            'temperature': 0.,
+            'top_p': 1.,
+            'max_seq_len': 1024,
+            'max_gen_len': 512,
+            'max_batch_size': 8,
+
+        }
+
+        return NotImplementedError() if tune else Config
+    
+
+    def __LLAMA_QUANT(self, tune):
+
+        Config = {
+            # identifier
+            'name': 'llama',
+
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'llama-30b-hf'),
+            'wbits': 4,
+            'load': os.path.join(MODEL_ROOT_DIR, 'pyllama_data/pyllama-30B4b.pt'),
+            'tokenizer_path' : os.path.join(MODEL_ROOT_DIR, 'pyllama_data/tokenizer.model'),
+
+            # evaluation config
+            'temperature': 0.,
+            'top_p': 1.,
+            'max_seq_len': 1024,
+            'max_gen_len': 512,
+            'do_sample': False,
+
+        }
+
+        return NotImplementedError() if tune else Config 
+
+
+    def __Seq2Edit(self, tune):
+        Config = {
+            'name': 'seq2edit',
+
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-struct-bert-large'),   #('weights_name')
+
+            # 'model_name': 'Best_Model_Stage_1',         # Best_Model_Stage_1 & 2
+
+            'n_epoch1': 2,
+            'n_epoch2': 20,
+
+            'patience': 3,
+
+            'lr1': 1e-3,
+            'lr2': 1e-5,
+
+            'batch_size1': 512,
+            'batch_size2': 128,
+            'updates_per_epoch': None,
+
+            'predictor_dropout': 0.0,
+            'label_smoothing': 0.0,
+
+            'pretrain_folder': None,
+            'pretrain': None,
+            'accumulation_size1': 1,
+            'accumulation_size2': 4,
+
+            'save_metric': "+labels_accuracy",      # 模型保存指标["+labels_accuracy", "+labels_accuracy_except_keep"]
+
+        }
+
+        return NotImplementedError() if tune else Config
+    
+    def __GECToR(self, tune):
+        Config = {
+            'name': 'gector',
+
+            # pretrained model and tokenizer
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-macbert-base'),
+            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
+
+            # model label vocab
+            'ctc_vocab_dir': os.path.join(MODEL_ROOT_DIR, 'GECToR', 'ctc_vocab'),
+            'detect_tags_file': "ctc_detect_tags.txt",
+            'correct_tags_file': "ctc_correct_tags.txt",
+            'detect_vocab_size': 2,
+            'correct_vocab_size': 20675,
+
+            # training setting
+            'warmup_proportion': 0.01,
+            'learning_rate': 3e-5,
+            'adam_epsilon': 1e-8,
+            'use_tensorboard': False,
+            # 'batch_size': 64,
+            'epochs': 30,
+            # 'eval_step': 100,
+            'max_grad_norm': 1.0,
+        }
+
+        return NotImplementedError() if tune else Config
+
+    def __SoftMaskedBERT(self, tune):
+
+        Config = {
+            # identifier
+            'name': 'softmaskedbert',
+
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-roberta-wwm-ext'),
+            'embedding_size': 768,
+            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
+
+            # fixed parameters
+
+            # parameters that are able to be tuned
+            'gamma': 0.7,   # loss weight
+            'hidden_size': 50,
+
+            # learning parameters
+            'batch_size': 32,
+            'max_epochs': 20,
+            'learning_rate_bert': 0.0001,
+            'learning_rate_other': 0.0001,
+            'weight_decay_bert': 0.0,
+            'weight_decay_other': 0.0,   
+            'early_stop': 6,
+
+            # evaluation config
+            'metrics': 'spelling_check_1',
+            'KeyEval': 'loss',
+            'scheduler_mode': 'min',
+ 
+        }
+
+        TuneConfig = {     
+            # identifier
+            'name': 'softmaskedbert',
+
+            # pretrained model
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-roberta-wwm-ext'),
+
+            # fixed parameters
+
+            # parameters that are able to be tuned
+
+            # learning parameters
+
+            # evaluation config
+ 
+        }
+
+        return TuneConfig if tune else Config
+
+    
+    def __STG_Joint(self, tune):
+        Config = {
+            # identifier
+            'name': 'stgjoint',
+
+            # pretrained model
+            'language_model': True,            # 'use_lm'
+            'lm_path': os.path.join(MODEL_ROOT_DIR, 'chinese-roberta-wwm-ext'),       # 'lm_path'
+            'lm_hidden_size': 768,
+            'output_hidden_states': True,
+            'finetune': True,
+            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
+
+            # convertor setting
+            'p2next': True,
+
+            # search params
+            'sw_mode': 'rsgs',
+            'beam_width': 1,
+
+            # model params
+            'model': 'modalnet_origin', # modalnet_origin, Model Selection, Can Choose [modalnet_origin]
+            'num_classes': 2,
+            'tagger_classes': len(TAGGER_MAP.keys()),
+            'max_generate': 5,
+            # we actually set max_generate (released checkpoint) to 5 during training phase. However, we calculated the distribution of the data after the rebuttal and thought that 6 would be more appropriate.
+            'padding_size': 150,
+            'padding_val': 0,
+            'ignore_val': -1,
+            'dropout': 0.1,
+            'scale_attn': True,
+            'factorized_embedding': False,
+            'lm_emb_size': 768,
+
+
+            # parameters that are able to be tuned
+            'layers_num': 12,
+            'layer_init_w': 0.1,
+
+            # learning parameters
+            'shuffle': True,
+            'droplast': False,
+            'optimizer': 'adamW',
+            'lr': 1e-5,
+            'wd': 1e-2,
+            'warmup_steps': 10,
+            'epoch': 50,
+            'criterion': 'CE',
+ 
+        }
+
+        TuneConfig = {     
+            # identifier
+            'name': 'stgjoint',
+
+            # fixed parameters
+
+            # parameters that are able to be tuned
+
+            # learning parameters
+
+            # evaluation config
+ 
+        }
+
+        return NotImplementedError() if tune else Config
+

@@ -1,0 +1,105 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "MuCGEC_Seq2Seq",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model", "seq2seq",
+                "--task_mode", "train",
+                "--dataset", "mucgec",
+                "--pre_save_dir", "results",
+                "--device", "2",
+            ],
+            "env":  {"CUDA_VISIBLE_DEVICES":"0,1,2,3"}
+        },
+        {
+            "name": "MuCGEC_Seq2Edit",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model", "seq2edit",
+                "--task_mode", "train",
+                "--dataset", "mucgec_edit",
+                "--pre_save_dir", "results",
+                "--device", "2",
+            ],
+            "env":  {"CUDA_VISIBLE_DEVICES":"0,1,2,3"}
+        },        
+        {
+            "name": "MuCGEC-STGJoint",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model", "stgjoint",
+                "--task_mode", "train",
+                "--dataset", "mucgec",
+                "--pre_save_dir", "results",
+                "--device", "0",
+                "--devices", "1"
+            ],
+        },
+        {
+            "name": "STGJoint-FangZheng-Test",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model", "stgjoint",
+                "--task_mode", "test",
+                "--dataset", "fangzhenggrammar",
+                "--pre_save_dir", "results",
+                "--load", "results/stgjoint-augment-20230311-1008/",
+                "--device", "1",
+            ],
+            "env":  {"CUDA_VISIBLE_DEVICES":"0,1,2,3"}
+        },
+        {
+            "name": "Seq2Seq_FangZheng",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model", "seq2seq",
+                "--task_mode", "train",
+                "--dataset", "fangzhengdapei",
+                "--pre_save_dir", "results",
+                "--device", "2",
+            ],
+            "env":  {"CUDA_VISIBLE_DEVICES":"0,1,2,3"}
+        },
+        {
+            "name": "Seq2Edit_FangZheng",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model", "seq2edit",
+                "--task_mode", "train",
+                "--dataset", "fangzhengdapei",
+                "--pre_save_dir", "results",
+                "--device", "2",
+            ],
+            "env":  {"CUDA_VISIBLE_DEVICES":"0,1,2,3"}
+        },        
+    ]
+}
