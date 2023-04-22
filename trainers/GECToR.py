@@ -129,9 +129,10 @@ class GECToRTrainer(Trainer):
                 self.optimizer.step()
                 self.scheduler.step()
                 self.model.zero_grad()
-                logger.info('【train】 epoch:{}/{} step:{}/{} detect_loss:{:.6f} correct_loss:{:.6f} loss:{:.6f}'.format(
-                    epoch, self.args.epochs, global_step, self.t_total,
-                    batch_detect_loss.item(), batch_correct_loss.item(), batch_loss.item()))
+                if global_step % 100 == 0:
+                    logger.info('【train】 epoch:{}/{} step:{}/{} detect_loss:{:.6f} correct_loss:{:.6f} loss:{:.6f}'.format(
+                        epoch, self.args.epochs, global_step, self.t_total,
+                        batch_detect_loss.item(), batch_correct_loss.item(), batch_loss.item()))
 
                 global_step += 1
                 if self.args.use_tensorboard:

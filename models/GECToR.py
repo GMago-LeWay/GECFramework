@@ -5,6 +5,8 @@ import sys
 sys.path.append("..")
 import torch
 from transformers.models.bert import BertModel, BertPreTrainedModel, BertConfig
+import os
+
 from torch.nn import CrossEntropyLoss, Module
 from dataset_provider.GECToR import CtcTokenizer
 
@@ -50,6 +52,11 @@ class ModelingCtcBert(Module):
         super(ModelingCtcBert, self).__init__()
         self.args = args
         self.config = config
+        # get vocab information
+        with open(os.path.join(config.ctc_vocab_dir, config.correct_tags_file), "r") as fp:
+            vocab_szie = len(fp.read().strip().split("\n"))
+        config.correct_vocab_size = vocab_szie
+
         self.tokenizer = CtcTokenizer.from_pretrained(config.pretrained_model)
         bert_config = BertConfig.from_pretrained(config.pretrained_model)
         self.bert = BertModel.from_pretrained(config.pretrained_model)

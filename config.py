@@ -231,14 +231,6 @@ class Config:
 
         return dataConfig
     
-    def __GECToR_Data(self):
-        dataConfig = {
-            'text_cut': 128,
-            'batch_size': 128,
-            'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch   
-        }
-
-        return dataConfig
 
     def __HybridSet(self):
 
@@ -523,9 +515,9 @@ class Config:
             # model label vocab
             'ctc_vocab_dir': os.path.join(MODEL_ROOT_DIR, 'GECToR', 'ctc_vocab'),
             'detect_tags_file': "ctc_detect_tags.txt",
-            'correct_tags_file': "ctc_correct_cail2022_tags.txt",
+            'correct_tags_file': "ctc_correct_tags.txt", # ctc_correct_tags.txt, ctc_correct_cail2022_tags.txt
             'detect_vocab_size': 2,
-            'correct_vocab_size': 4461,
+            'correct_vocab_size': None,        # lazy init
 
             # training setting
             'warmup_proportion': 0.01,
@@ -539,6 +531,15 @@ class Config:
         }
 
         return NotImplementedError() if tune else Config
+
+    def __GECToR_Data(self):
+        dataConfig = {
+            'text_cut': 128,
+            'batch_size': 128,
+            'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch   
+        }
+
+        return dataConfig
 
     def __SoftMaskedBERT(self, tune):
 
