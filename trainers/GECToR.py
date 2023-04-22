@@ -243,43 +243,48 @@ class GECToRTrainer(Trainer):
             result = []
             with torch.no_grad():
                 for batch in tqdm(dataloader):
-                    texts = batch['raw_texts']
-                    for idx, raw_text in enumerate(texts):
-                        inputs = self.model.tokenizer(raw_text, return_batch=True)
-                        text = [i for i in raw_text]
-                        real_length = 1 + len(raw_text)
-                        input_ids = torch.LongTensor(inputs["input_ids"]).to(self.device)
-                        real_lenth = input_ids
-                        attention_mask = torch.LongTensor(inputs["attention_mask"]).to(self.device)
-                        token_type_ids = torch.LongTensor(inputs["token_type_ids"]).to(self.device)
-                        output = self.model(input_ids, attention_mask, token_type_ids)
-                        correct_outputs = output["correct_outputs"]
-                        correct_outputs = correct_outputs.detach().cpu().numpy()
-                        detect_outputs = output["detect_outputs"]
-                        detect_outputs = detect_outputs.detach().cpu().numpy()
-                        detect_outputs = np.argmax(detect_outputs, axis=-1).squeeze()[:real_length]
-                        correct_outputs = np.argmax(correct_outputs, axis=-1).squeeze()[:real_length]
-                        # print(detect_outputs)
-                        # print(correct_outputs)
-                        res = {}
-                        pre_text = []
-                        for d, c, t in zip(detect_outputs, correct_outputs, ["始"] + text):
-                            clabel = self.id2label[c]
-                            if "APPEND" in clabel:
-                                pre_text.append(clabel)
-                                insert = clabel.split("_")[-1]
-                                pre_text.append(insert)
-                            elif "DELETE" in clabel:
-                                continue
-                            elif "$REPLACE" in clabel:
-                                replace = clabel.split("_")[-1]
-                                pre_text.append(replace)
-                            else:
-                                pre_text.append(t)
-                        res["src"] = "".join(text)
-                        res["predict"] = "".join(pre_text)[1:]
-                        res["id"] = batch['ids'][idx]
-                        result.append(res)
+                    batch_size = len(batch['ids'])
+                    batch_results = [{"id": batch['ids'][i], "src": batch['raw_texts'][i]} for i in range(batch_size)]
+                    current_inputs = list(batch['raw_texts'])
+                    for _ in range(self.args.iteration):
+                        for idx, raw_text in enumerate(current_inputs):
+                            inputs = self.model.tokenizer(raw_text, return_batch=True)
+                            text = [i for i in raw_text]
+                            real_length = 1 + len(raw_text)
+                            input_ids = torch.LongTensor(inputs["input_ids"]).to(self.device)
+                            real_lenth = input_ids
+                            attention_mask = torch.LongTensor(inputs["attention_mask"]).to(self.device)
+                            token_type_ids = torch.LongTensor(inputs["token_type_ids"]).to(self.device)
+                            output = self.model(input_ids, attention_mask, token_type_ids)
+                            correct_outputs = output["correct_outputs"]
+                            correct_outputs = correct_outputs.detach().cpu().numpy()
+                            detect_outputs = output["detect_outputs"]
+                            detect_outputs = detect_outputs.detach().cpu().numpy()
+                            detect_outputs = np.argmax(detect_outputs, axis=-1).squeeze()[:real_length]
+                            correct_outputs = np.argmax(correct_outputs, axis=-1).squeeze()[:real_length]
+                            # print(detect_outputs)
+                            # print(correct_outputs)
+                            res = {}
+                            pre_text = []
+                            for d, c, t in zip(detect_outputs, correct_outputs, ["始"] + text):
+                                clabel = self.id2label[c]
+                                if "APPEND" in clabel:
+                                    pre_text.append(clabel)
+                                    insert = clabel.split("_")[-1]
+                                    pre_text.append(insert)
+                                elif "DELETE" in clabel:
+                                    continue
+                                elif "$REPLACE" in clabel:
+                                    replace = clabel.split("_")[-1]
+                                    pre_text.append(replace)
+                                else:
+                                    pre_text.append(t)
+                            batch_results[idx]["predict"] = "".join(pre_text)[1:]
+                        ## refresh text with the predicted output and re-correct
+                        current_inputs = [item['predict'] for item in batch_results]
+                    
+                    # iteration ends.
+                    result.extend(batch_results)
             return result
         else:
             raise NotImplementedError()

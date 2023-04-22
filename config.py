@@ -197,26 +197,7 @@ class Config:
         }
 
         return dataConfig
-
-    def __FCGEC(self):
-
-        dataConfig = {
-            'data_base_dir': f"{self.data_dir}/stg_joint",
-            'train_file': 'FCGEC_train.json',
-            'valid_file': 'FCGEC_valid.json',
-            'test_file': 'FCGEC_test.json',
-            'out_dir': 'stg_joint',
-            'out_uuid': False,       # 'Output UUID in test file'
-            'err_only': True,
-            'text_cut': 256,
-
-            # learning params
-            'batch_size': 32, 
-            'print_step': 50,
-            'eval_step': 200,      # steps interval of evaluation, None: 1eval/epoch
-        }
-
-        return dataConfig
+    
 
     def __FCGEC_Seq2Seq(self):
 
@@ -361,6 +342,59 @@ class Config:
             'scheduler_mode': 'min',
             'scheduler_factor': 0.2,
             'scheduler_patience': 5,
+ 
+        }
+
+        return TuneConfig if tune else Config
+
+    def __SoftMaskedBERT(self, tune):
+
+        Config = {
+            # identifier
+            'name': 'softmaskedbert',
+
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-roberta-wwm-ext'),
+            'embedding_size': 768,
+            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
+
+            # fixed parameters
+
+            # parameters that are able to be tuned
+            'gamma': 0.7,   # loss weight
+            'hidden_size': 50,
+
+            # learning parameters
+            'batch_size': 32,
+            'max_epochs': 20,
+            'learning_rate_bert': 0.0001,
+            'learning_rate_other': 0.0001,
+            'weight_decay_bert': 0.0,
+            'weight_decay_other': 0.0,   
+            'early_stop': 6,
+
+            # evaluation config
+            'metrics': 'spelling_check_1',
+            'KeyEval': 'loss',
+            'scheduler_mode': 'min',
+ 
+        }
+
+        TuneConfig = {     
+            # identifier
+            'name': 'softmaskedbert',
+
+            # pretrained model
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-roberta-wwm-ext'),
+
+            # fixed parameters
+
+            # parameters that are able to be tuned
+
+            # learning parameters
+
+            # evaluation config
  
         }
 
@@ -528,6 +562,9 @@ class Config:
             'epochs': 20,
             # 'eval_step': 100,
             'max_grad_norm': 1.0,
+
+            # infer setting
+            'iteration': 5,
         }
 
         return NotImplementedError() if tune else Config
@@ -540,59 +577,6 @@ class Config:
         }
 
         return dataConfig
-
-    def __SoftMaskedBERT(self, tune):
-
-        Config = {
-            # identifier
-            'name': 'softmaskedbert',
-
-            # pretrained model
-            'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-roberta-wwm-ext'),
-            'embedding_size': 768,
-            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
-
-            # fixed parameters
-
-            # parameters that are able to be tuned
-            'gamma': 0.7,   # loss weight
-            'hidden_size': 50,
-
-            # learning parameters
-            'batch_size': 32,
-            'max_epochs': 20,
-            'learning_rate_bert': 0.0001,
-            'learning_rate_other': 0.0001,
-            'weight_decay_bert': 0.0,
-            'weight_decay_other': 0.0,   
-            'early_stop': 6,
-
-            # evaluation config
-            'metrics': 'spelling_check_1',
-            'KeyEval': 'loss',
-            'scheduler_mode': 'min',
- 
-        }
-
-        TuneConfig = {     
-            # identifier
-            'name': 'softmaskedbert',
-
-            # pretrained model
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-roberta-wwm-ext'),
-
-            # fixed parameters
-
-            # parameters that are able to be tuned
-
-            # learning parameters
-
-            # evaluation config
- 
-        }
-
-        return TuneConfig if tune else Config
 
     
     def __STG_Joint(self, tune):
@@ -646,19 +630,24 @@ class Config:
  
         }
 
-        TuneConfig = {     
-            # identifier
-            'name': 'stgjoint',
-
-            # fixed parameters
-
-            # parameters that are able to be tuned
-
-            # learning parameters
-
-            # evaluation config
- 
-        }
-
         return NotImplementedError() if tune else Config
 
+    def __FCGEC(self):
+
+        dataConfig = {
+            'data_base_dir': f"{self.data_dir}/stg_joint",
+            'train_file': 'FCGEC_train.json',
+            'valid_file': 'FCGEC_valid.json',
+            'test_file': 'FCGEC_test.json',
+            'out_dir': 'stg_joint',
+            'out_uuid': False,       # 'Output UUID in test file'
+            'err_only': True,
+            'text_cut': 256,
+
+            # learning params
+            'batch_size': 32, 
+            'print_step': 50,
+            'eval_step': 200,      # steps interval of evaluation, None: 1eval/epoch
+        }
+
+        return dataConfig
