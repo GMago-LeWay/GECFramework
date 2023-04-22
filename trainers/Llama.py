@@ -53,7 +53,6 @@ class LlamaTrainer:
             ## generate
             model_generations = self.model.generate(prompts, stop_words=["\n"])
 
-
             for i in range(len(model_generations)):
                 generations[normal_text_idx[i]] = model_generations[i]
             # for result in results:

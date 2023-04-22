@@ -233,9 +233,9 @@ class Config:
     
     def __GECToR_Data(self):
         dataConfig = {
-            'text_cut': 256,
-            'batch_size': 64,
-            'eval_step': None,        # steps interval of evaluation, None: 1eval/epoch   
+            'text_cut': 128,
+            'batch_size': 128,
+            'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch   
         }
 
         return dataConfig
@@ -411,7 +411,8 @@ class Config:
 
             # pretrained model
             'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'llama-7b-hf'),
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-llama/alpaca-combined'),
+            'lora_model': None,
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
 
             # fixed parameters
@@ -522,9 +523,9 @@ class Config:
             # model label vocab
             'ctc_vocab_dir': os.path.join(MODEL_ROOT_DIR, 'GECToR', 'ctc_vocab'),
             'detect_tags_file': "ctc_detect_tags.txt",
-            'correct_tags_file': "ctc_correct_tags.txt",
+            'correct_tags_file': "ctc_correct_cail2022_tags.txt",
             'detect_vocab_size': 2,
-            'correct_vocab_size': 20675,
+            'correct_vocab_size': 4461,
 
             # training setting
             'warmup_proportion': 0.01,
@@ -532,7 +533,7 @@ class Config:
             'adam_epsilon': 1e-8,
             'use_tensorboard': False,
             # 'batch_size': 64,
-            'epochs': 30,
+            'epochs': 20,
             # 'eval_step': 100,
             'max_grad_norm': 1.0,
         }
