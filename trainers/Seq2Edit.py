@@ -32,16 +32,7 @@ class Seq2EditTrainer(Trainer2):
 
         assert model is None, "The Seq2Edit Model need to be initialized in trainer."
         self.args = args
-        self.config = config
-
-        logger = logging.getLogger(__file__)
-        logger.setLevel(level=logging.INFO)
-        start_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime())
-        handler = logging.FileHandler(args.save_dir + '/logs_{:s}.txt'.format(str(start_time)))
-        handler.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)    
+        self.config = config   
         self.logger = logger
 
         if args.task_mode == 'train':

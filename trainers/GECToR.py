@@ -268,11 +268,11 @@ class GECToRTrainer(Trainer):
                             pre_text = []
                             for d, c, t in zip(detect_outputs, correct_outputs, ["始"] + text):
                                 clabel = self.id2label[c]
-                                if "APPEND" in clabel:
-                                    pre_text.append(clabel)
+                                if "$APPEND" in clabel:
+                                    pre_text.append(t)
                                     insert = clabel.split("_")[-1]
                                     pre_text.append(insert)
-                                elif "DELETE" in clabel:
+                                elif "$DELETE" in clabel:
                                     continue
                                 elif "$REPLACE" in clabel:
                                     replace = clabel.split("_")[-1]
@@ -290,5 +290,5 @@ class GECToRTrainer(Trainer):
             raise NotImplementedError()
     
     def load(self, save_dir=None):
-        default_path = os.path.join(self.global_args.save_dir, '{}_model.pt'.format(self.args.name))
+        default_path = os.path.join(save_dir, '{}_model.pt'.format(self.args.name))
         self.model.load_state_dict(torch.load(default_path))

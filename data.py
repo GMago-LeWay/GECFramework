@@ -150,7 +150,7 @@ class TextLabelDataset:
         # for item in gross_data:
         #     if len(item['text']) < 80 and len(item['label']) < 80:
         #         data.append(item)
-        data = random.sample(data, 1000)
+        # data = random.sample(data, 10000)
         labeled = 'label' in data[0]
         return DataLoader(data, batch_size=self.config.batch_size, collate_fn=self.get_collate_fn(tokenizer=tokenizer, labeled=labeled), drop_last=False)
 
@@ -493,8 +493,8 @@ class GECToRDataset(TextLabelDataset):
         else:
             raise ModuleNotFoundError()
         
-    def get_collate_fn(self, tokenizer=None):
-        return super().get_collate_fn(tokenizer)
+    def get_collate_fn(self, **kwargs):
+        return super().get_collate_fn(**kwargs)
     
     def get_train_val_dataloader(self, tokenizer) -> tuple[DataLoader, DataLoader, DataLoader]:
         train, val, test = self.train_val_test_data()

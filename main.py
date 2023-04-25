@@ -30,7 +30,7 @@ def parse_args():
                         help='GPU id.')
     parser.add_argument('--load', type=str, default=None,
                         help='model save directory to be loaded in infer task.')
-    parser.add_argument('--seed', type=int, default=None,
+    parser.add_argument('--seed', type=int, default=111,
                         help='random seed.')
     parser.add_argument('--data_save_dir', type=str, default='/home/liwei/workspace/datasets/clg-augment',
                         help='only use in independent augmentation task, identify the save directory.')
@@ -113,7 +113,8 @@ class ExperimentsOfGEC:
         setup_seed(self.args.seed)
         # model settings
         dataset_ = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
-        logger.info(get_time() + f"Test: Use model {self.args.load}, on dataset {self.args.dataset}")
+        logger.info(get_time() + f"Test: Use model {config.name} at {self.args.load}, on dataset {self.args.dataset}")
+        logger.info(f"Args: {self.args}; Config: {config}")
         model_to_be_init = get_model(model=self.args.model)
         if self.args.model in ['seq2seq', 'seq2edit']:
             model = model_to_be_init(config=config, args=self.args)
@@ -150,7 +151,8 @@ class ExperimentsOfGEC:
         setup_seed(self.args.seed)
         # model settings
         dataset_ = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
-        logger.info(get_time() + f"Infer: Use model {self.args.load}, on dataset {self.args.dataset}")
+        logger.info(get_time() + f"Infer: Use model {config.name} at {self.args.load}, on dataset {self.args.dataset}")
+        logger.info(f"Args: {self.args}; Config: {config}")
         model_to_be_init = get_model(model=self.args.model)
         if self.args.model in ['seq2seq', 'seq2edit']:
             model = model_to_be_init(config=config, args=self.args)
@@ -173,7 +175,7 @@ class ExperimentsOfGEC:
             raise NotImplementedError()
         json_results = train.do_infer(dataloader, mode="INFER")
         save_path = os.path.join(self.args.save_dir, f'{self.args.model}-{self.args.dataset}-{self.args.task_mode}.json')
-        save_txt = os.path.join(self.args.save_dir, f'{self.args.model}-{self.args.dataset}-{self.args.task_mode}.txt')
+        save_txt = os.path.join(self.args.save_dir, f'MuCGEC_test.txt')
         with open(save_path, "w") as f:
             json.dump(json_results, f, ensure_ascii=False, indent=4)
         with open(save_txt, "w") as f:
@@ -314,7 +316,8 @@ class ExperimentsOfLLM:
         setup_seed(self.args.seed)
         # model settings
         dataset_ = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
-        logger.info(get_time() + f"Test: Use model {self.args.load}, on dataset {self.args.dataset}")
+        logger.info(get_time() + f"Test: Use model {config.name} at {self.args.load}, on dataset {self.args.dataset}")
+        logger.info(f"Args: {self.args}; Config: {config}")
         model_to_be_init = get_model(model=self.args.model)
         model = model_to_be_init(config=config, args=self.args)
         train_to_be_init = get_train(model=self.args.model)
@@ -338,7 +341,8 @@ class ExperimentsOfLLM:
         setup_seed(self.args.seed)
         # model settings
         dataset_ = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
-        logger.info(get_time() + f"Test: Use model {self.args.load}, on dataset {self.args.dataset}")
+        logger.info(get_time() + f"Test: Use model {config.name} at {self.args.load}, on dataset {self.args.dataset}")
+        logger.info(f"Args: {self.args}; Config: {config}")
         model_to_be_init = get_model(model=self.args.model)
         model = model_to_be_init(config=config, args=self.args)
         train_to_be_init = get_train(model=self.args.model)

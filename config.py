@@ -564,15 +564,15 @@ class Config:
             'max_grad_norm': 1.0,
 
             # infer setting
-            'iteration': 5,
+            'iteration': 3,
         }
 
         return NotImplementedError() if tune else Config
 
     def __GECToR_Data(self):
         dataConfig = {
-            'text_cut': 128,
-            'batch_size': 128,
+            'text_cut': 256,
+            'batch_size': 48,
             'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch   
         }
 

@@ -662,6 +662,7 @@ class SwitchDataset(Dataset):
         self.sentences, self.label   = self._read_csv(path)
         self.origin_label = deepcopy(self.label)
         self.label = data_filter(self.sentences, self.label)
+        self.final_sentences_ids = []
         self.point_seq, self.token, self.wd_idx, self.label = self._process_switch(self.sentences, self.label)
 
     def _read_csv(self, path):
@@ -715,6 +716,7 @@ class SwitchDataset(Dataset):
             if len(pointer.labels) > self.args.padding_size:
                 self.error_number += 1
                 continue
+            self.final_sentences_ids.append(idx)
             point_seqs.append(pointer)
             token_collection.append(tokens)
             wd_collect.append(wd_idxs)

@@ -9,6 +9,7 @@ import numpy as np
 import time
 import logging
 import os
+import json
 from torch.utils.data import DataLoader
 from transformers import AdamW
 from sklearn.metrics import  classification_report
@@ -879,7 +880,6 @@ class JointTrainer(Trainer):
         switch_tokens = self._apply_switch_operator(tokens_ls, pred_label)
         switch_gts    = self._apply_switch_operator(tokens_ls, truth_label)
 
-        print('Construct Tagger Data')
         logger.info('Construct Tagger Data')
         tagger_test = TaggerDataset(self.args, test_dir, 'test', switch_tokens)
         TestLoader = DataLoader(tagger_test, batch_size=self.args.batch_size, shuffle=False, drop_last=False, collate_fn=collate_fn_tagger)
@@ -904,7 +904,6 @@ class JointTrainer(Trainer):
             pred_comb.extend(comb_preds)
             met_masks.extend(attn_mask.detach().cpu().numpy())
 
-        print('Construct Generator Data')
         logger.info('Construct Generator Data')
         tag_construct = (pred_tagger, pred_comb)
         tag_tokens, mlm_tgt_masks = reconstruct_tagger_V2(np.array(tagger_tokens), tag_construct)
@@ -937,10 +936,33 @@ class JointTrainer(Trainer):
         switch_tokens = [''.join(switch_test.tokenizer.convert_ids_to_tokens(ele[1:-1])).replace('##', '').replace('[UNK]', '"').replace('[PAD]', '') for ele in switch_tokens]
         tagger_tokens = [''.join(tagger_test.tokenizer.convert_ids_to_tokens(ele[1:-1])).replace('##', '').replace('[UNK]', '"').replace('[PAD]', '') for ele in tag_tokens]
         generate_tokens = [''.join(generator_test.tokenizer.convert_ids_to_tokens(ele[1:-1])).replace('##', '').replace('[UNK]', '"').replace('[PAD]', '') for ele in outputs]
-        report_pipeline_output(os.path.join(self.global_args.save_dir, self.infer_export), switch_test.sentences, switch_test.label, switch_tokens, tagger_tokens, generate_tokens, uuid=uuid)
+        report_pipeline_output(os.path.join(self.global_args.save_dir, self.infer_export), 
+                               [switch_test.sentences[sent_id] for sent_id in switch_test.final_sentences_ids], 
+                               switch_test.label, switch_tokens, tagger_tokens, generate_tokens, uuid=uuid)
         logger.info('Final output saved at %s' % os.path.join(self.global_args.save_dir, self.infer_export))
-        print('Final output saved at %s' % os.path.join(self.global_args.save_dir, self.infer_export))
-        return {}
+
+        # if there was error in sentence switching, copy the original sentence as output
+        sentence_num = len(switch_test.sentences)
+        final_predict = []
+        last_sent_id = 0
+        for idx, sent_id in enumerate(switch_test.final_sentences_ids):
+            final_predict.extend(switch_test.sentences[last_sent_id:sent_id])
+            final_predict.append(generate_tokens[idx])
+            last_sent_id = sent_id + 1
+        if last_sent_id != sentence_num:
+            final_predict.extend(switch_test.sentences[last_sent_id:sentence_num])
+        
+        # load id
+        test_id_file = os.path.join(self.args.data_base_dir, 'test.id.json')
+        with open(test_id_file) as f:
+            test_ids = json.load(f)
+
+        assert sentence_num == len(final_predict) == len(test_ids)
+        json_result = []
+        for i in range(sentence_num):
+            json_result.append({'id': test_ids[i], 'src': switch_test.sentences[i], 'predict': final_predict[i]})
+        
+        return json_result
 
     # Generate Checkpoints
     def _generate_checkp(self) -> dict:

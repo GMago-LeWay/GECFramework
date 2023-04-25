@@ -22,6 +22,8 @@ class StoppingCriteriaSub(StoppingCriteria):
 class CausalLM(torch.nn.Module):
     def __init__(self, args, config) -> None:
         super(CausalLM, self).__init__()
+        self.args = args
+        self.config = config
         load_type = torch.float16
         self.tokenizer = LlamaTokenizer.from_pretrained(config.pretrained_model)
         self.language_model = LlamaForCausalLM.from_pretrained(
@@ -65,12 +67,17 @@ class CausalLM(torch.nn.Module):
         raise NotImplementedError()
     
     def generate(self, input_texts):
-        inputs = self.tokenizer(input_texts, return_tensors="pt")
-        generation_output = self.language_model.generate(
-            input_ids = inputs["input_ids"].to(self.args.device), 
-            attention_mask = inputs['attention_mask'].to(self.args.device),
-            eos_token_id=self.tokenizer.eos_token_id,
-            pad_token_id=self.tokenizer.pad_token_id,
-            **self.generation_config
-        )
-        return generation_output
+        outputs = []
+        for text in input_texts:
+            inputs = self.tokenizer(text, return_tensors="pt")  #add_special_tokens=False ?
+            generation_output = self.language_model.generate(
+                input_ids = inputs["input_ids"].to(self.args.device), 
+                attention_mask = inputs['attention_mask'].to(self.args.device),
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.pad_token_id,
+                **self.generation_config
+            )
+            s = generation_output[0]
+            output = self.tokenizer.decode(s, skip_special_tokens=True)
+            outputs.append(output)
+        return outputs

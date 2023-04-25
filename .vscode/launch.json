@@ -17,8 +17,8 @@
                 "--dataset", "mucgec",
                 "--pre_save_dir", "results",
                 "--device", "2",
+                "--devices", "0,1,2,3"
             ],
-            "env":  {"CUDA_VISIBLE_DEVICES":"0,1,2,3"}
         },
         {
             "name": "MuCGEC_Seq2Edit",
@@ -30,11 +30,11 @@
             "args": [
                 "--model", "seq2edit",
                 "--task_mode", "train",
-                "--dataset", "mucgec_edit",
+                "--dataset", "mucgec",
                 "--pre_save_dir", "results",
                 "--device", "2",
+                "--devices", "0,1,2,3"
             ],
-            "env":  {"CUDA_VISIBLE_DEVICES":"0,1,2,3"}
         },        
         {
             "name": "MuCGEC-STGJoint",
@@ -49,11 +49,11 @@
                 "--dataset", "mucgec",
                 "--pre_save_dir", "results",
                 "--device", "0",
-                "--devices", "1"
+                "--devices", "0,1,2,3"
             ],
         },
         {
-            "name": "STGJoint-FangZheng-Test",
+            "name": "STGJoint-MuCGEC",
             "type": "python",
             "request": "launch",
             "program": "main.py",
@@ -61,13 +61,13 @@
             "justMyCode": true,
             "args": [
                 "--model", "stgjoint",
-                "--task_mode", "test",
-                "--dataset", "fangzhenggrammar",
+                "--task_mode", "infer",
+                "--dataset", "mucgec",
                 "--pre_save_dir", "results",
-                "--load", "results/stgjoint-augment-20230311-1008/",
-                "--device", "1",
+                "--load", "results/stgjoint-mucgec-20230411-1832",
+                "--device", "0",
+                "--devices", "1"
             ],
-            "env":  {"CUDA_VISIBLE_DEVICES":"0,1,2,3"}
         },
         {
             "name": "Seq2Seq_FangZheng",
@@ -82,8 +82,8 @@
                 "--dataset", "fangzhengdapei",
                 "--pre_save_dir", "results",
                 "--device", "2",
+                "--devices", "0,1,2,3"
             ],
-            "env":  {"CUDA_VISIBLE_DEVICES":"0,1,2,3"}
         },
         {
             "name": "Seq2Edit_FangZheng",
@@ -98,8 +98,24 @@
                 "--dataset", "fangzhengdapei",
                 "--pre_save_dir", "results",
                 "--device", "2",
+                "--devices", "0,1,2,3"
             ],
-            "env":  {"CUDA_VISIBLE_DEVICES":"0,1,2,3"}
-        },        
+        },    
+        {
+            "name": "LLM_FangZheng",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model", "llm",
+                "--task_mode", "test",
+                "--dataset", "fangzhenggrammar",
+                "--pre_save_dir", "results",
+                "--device", "1",
+                "--devices", "0,1,2,3"
+            ],
+        },    
     ]
 }

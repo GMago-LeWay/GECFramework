@@ -636,7 +636,7 @@ class DatasetCTC(Dataset):
                  max_seq_len: int = 128,
                  ctc_label_vocab_dir: str = 'src/baseline/ctc_vocab',
                  detect_tags_file:str = "ctc_detect_tags.txt",
-                 correct_tags_file:str = "ctc_dcorrect_tags.txt",
+                 correct_tags_file:str = "ctc_correct_tags.txt",
                  _loss_ignore_id: int = -100
                  ):
         """
@@ -703,7 +703,8 @@ class DatasetCTC(Dataset):
             if tag == 'replace' and i2 - i1 == j2 - j1:
                 replace_idx_list += [(i, '$REPLACE_' + trg_text[j])
                                      for i, j in zip(range(i1, i2), range(j1, j2))]
-            elif tag == 'insert' and j2 - j1 == 1:
+            elif tag == 'insert':
+                # if j2 - j1 == 1:
                 missing_idx_list.append((i1 - 1, '$APPEND_' + trg_text[j1]))
             elif tag == 'delete':
                 # 叠字叠词删除后面的
@@ -793,14 +794,14 @@ class DatasetCTC(Dataset):
 
 
 if __name__ == '__main__':
-    in_model_dir = "../model_hub/chinese-bert-wwm-ext"
-    src_texts = ["更是将他视为己出", "更是将他视为己出"] * 4
-    trg_texts = ["将更是他视为己出", "更是将他视为己出"] * 4
+    in_model_dir = "../models/chinese-macbert-base"
+    src_texts = ["更是将他视为己出", "更是将他视为己出", "更是将他视为己出", "更是将他视为己出"]
+    trg_texts = ["将更是他视为己出", "更是将他视为己出", "将他视为己出", "更是应该将他视为己出"]
     ctcDataset = DatasetCTC(in_model_dir=in_model_dir,
                             src_texts=src_texts,
                             trg_texts=trg_texts,
                             max_seq_len=128,
-                            ctc_label_vocab_dir='data/ctc_vocab',
+                            ctc_label_vocab_dir='../models/GECToR/ctc_vocab',
                             _loss_ignore_id=-100)
     data_loader = DataLoader(ctcDataset, batch_size=2, shuffle=False)
     for i,batch in enumerate(data_loader):
