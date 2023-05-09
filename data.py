@@ -24,7 +24,7 @@ from config import Config
 from config import MODEL_CORR_DATA, DATA_ROOT_DIR, DATA_DIR_NAME, MODEL_ROOT_DIR
 from utils.tools import get_time, dict_to_str, is_chinese
 
-from dataset_provider.FCGEC import JointDataset
+from dataset_provider.FCGEC import JointDataset, operate_filter
 from dataset_provider.FCGEC_transform import min_dist_opt
 from dataset_provider.GECToR import DatasetCTC
 
@@ -486,36 +486,143 @@ class GECToRDataset(TextLabelDataset):
     def __init__(self, args=None, config=None) -> None:
         super(GECToRDataset, self).__init__(args, config)
         self.tokenizer = None      # lazy init from model
-
-    def _check_tokenizer(self):
-        if self.tokenizer:
-            return
-        else:
-            raise ModuleNotFoundError()
+        self.processed_dir = os.path.join(config.data_dir, 'GECToR')
+        if not os.path.exists(self.processed_dir):
+            os.makedirs(self.processed_dir)
+    # def _check_tokenizer(self):
+    #     if self.tokenizer:
+    #         return
+    #     else:
+    #         raise ModuleNotFoundError()
         
     def get_collate_fn(self, **kwargs):
         return super().get_collate_fn(**kwargs)
     
-    def get_train_val_dataloader(self, tokenizer) -> tuple[DataLoader, DataLoader, DataLoader]:
-        train, val, test = self.train_val_test_data()
+    def train_val_test_data(self, use_processed_data):
+        if use_processed_data == False:
+            return super().train_val_test_data()
+        else:
+            train_data_file = os.path.join(self.processed_dir, 'train.json')
+            valid_data_file = os.path.join(self.processed_dir, 'valid.json')
+            test_data_file = os.path.join(self.processed_dir, 'test.json')
+            with open(train_data_file, 'r') as f:
+                train_data = json.load(f)
+            with open(valid_data_file, 'r') as f:
+                valid_data = json.load(f)
+            with open(test_data_file, 'r') as f:
+                test_data = json.load(f)
+            return train_data, valid_data, test_data
+    
+    def split_multi_append(self):
+        '''
+        multi append sentence can be split into multiple sentences.
+        '''
+        train_list, val_list, test_list = self.train_val_test_data(use_processed_data=False)
+        new_train_data_file = os.path.join(self.processed_dir, 'train.json')
+        new_valid_data_file = os.path.join(self.processed_dir, 'valid.json')
+        new_test_data_file = os.path.join(self.processed_dir, 'test.json')
 
-        train_dataset = DatasetCTC(in_model_dir=self.config.pretrained_model,
-                            src_texts=[item['text'] for item in train],
-                            trg_texts=[item['label'] for item in train],
-                            max_seq_len=self.config.text_cut,
-                            ctc_label_vocab_dir=self.config.ctc_vocab_dir,
-                            correct_tags_file=self.config.correct_tags_file,
-                            detect_tags_file=self.config.detect_tags_file,
-                            _loss_ignore_id=-100)
+        def split(data_item: dict):
+            src_text, tgt_text = '始' + data_item['text'], '始' + data_item['label']
+            id = data_item['id'] if 'id' in data_item else None
+            src_text_list = list(src_text)
+            src_text_edit_list = DatasetCTC.char_edit_list(src_text, tgt_text)
+            edit_num = [len(item) for item in src_text_edit_list]
+            max_edit = max(edit_num)
+            max_generate = 3
+            max_error_num = min(max_edit, max_generate)
+
+            split_sample = []
+            if max_error_num <= 1:
+                if id != None:
+                    split_sample.append({'id': f"{id}_0", 'text': ''.join(src_text_list)[1:], 'label': tgt_text[1:]})
+                else:
+                    split_sample.append({'text': ''.join(src_text_list)[1:], 'label': tgt_text[1:]})
+            else:
+                for i in range(max_error_num):
+                    if id != None:
+                        split_sample.append({'id': f"{id}_{i}", 'text': ''.join(src_text_list)[1:], 'label': tgt_text[1:]})
+                    else:
+                        split_sample.append({'text': ''.join(src_text_list)[1:], 'label': tgt_text[1:]})
+                    ## if this is not the last step of generating, apply edit and re-generate
+                    if i < max_error_num - 1:
+                        for char_idx in range(len(src_text_list)):
+                            if src_text_edit_list[char_idx]:
+                                edit_op = src_text_edit_list[char_idx].pop(0)
+                                ops = edit_op.split('_')
+                                if ops[0] == '$DELETE':
+                                    src_text_list[char_idx] = ''
+                                elif ops[0] == '$REPLACE':
+                                    src_text_list[char_idx] = ops[1]
+                                elif ops[0] == '$APPEND':
+                                    src_text_list[char_idx] += ops[1]
+            return split_sample
         
-        dev_dataset = DatasetCTC(in_model_dir=self.config.pretrained_model,
-                            src_texts=[item['text'] for item in val],
-                            trg_texts=[item['label'] for item in val],
-                            max_seq_len=self.config.text_cut,
-                            ctc_label_vocab_dir=self.config.ctc_vocab_dir,
-                            correct_tags_file=self.config.correct_tags_file,
-                            detect_tags_file=self.config.detect_tags_file,
-                            _loss_ignore_id=-100)
+        new_train_list, new_val_list = [], []
+        for item in tqdm(train_list):
+            new_train_list.extend(split(item))
+        for item in tqdm(val_list):
+            new_val_list.extend(split(item))
+        with open(new_train_data_file, 'w') as f:
+            print(f"Origin GECToR Train Data {len(train_list)} -> After processing {len(new_train_list)}")
+            json.dump(new_train_list, f, ensure_ascii=False, indent=4)
+        with open(new_valid_data_file, 'w') as f:
+            print(f"Origin GECToR Valid Data {len(val_list)} -> After processing {len(new_val_list)}")
+            json.dump(new_val_list, f, ensure_ascii=False, indent=4)
+        with open(new_test_data_file, 'w') as f:
+            print(f"Test Data will be remained.")
+            json.dump(test_list, f, ensure_ascii=False, indent=4)
+
+    
+    def get_train_val_dataloader(self, tokenizer) -> tuple[DataLoader, DataLoader, DataLoader]:
+        train, val, test = self.train_val_test_data(use_processed_data=self.config.use_multi_append)
+
+        ## cache config check
+        current_config = {
+            'use_multi_append': self.config.use_multi_append,
+            'pretrained_model': self.config.pretrained_model,
+            'ctc_vocab_dir': self.config.ctc_vocab_dir,
+            'detect_tags_file': self.config.detect_tags_file,
+            'correct_tags_file': self.config.correct_tags_file,
+        }
+        cache_config = None
+        cache_config_file = os.path.join(self.processed_dir, 'config.json')
+        if os.path.exists(cache_config_file):
+            with open(cache_config_file) as f:
+                cache_config = json.load(f)
+        ## cache check
+        train_cache_dir = os.path.join(self.processed_dir, 'train.pt')
+        valid_cache_dir = os.path.join(self.processed_dir, 'valid.pt')
+        if cache_config == current_config:
+            logger.info(f'loading cached dataset...')
+            train_dataset = torch.load(train_cache_dir, map_location='cpu')
+            dev_dataset = torch.load(valid_cache_dir, map_location='cpu')
+        else:
+            logger.info(f'construct dataset and cache...')
+            train_dataset = DatasetCTC(in_model_dir=self.config.pretrained_model,
+                                src_texts=[item['text'] for item in train],
+                                trg_texts=[item['label'] for item in train],
+                                max_seq_len=self.config.text_cut,
+                                ctc_label_vocab_dir=self.config.ctc_vocab_dir,
+                                correct_tags_file=self.config.correct_tags_file,
+                                detect_tags_file=self.config.detect_tags_file,
+                                _loss_ignore_id=-100)
+            
+            dev_dataset = DatasetCTC(in_model_dir=self.config.pretrained_model,
+                                src_texts=[item['text'] for item in val],
+                                trg_texts=[item['label'] for item in val],
+                                max_seq_len=self.config.text_cut,
+                                ctc_label_vocab_dir=self.config.ctc_vocab_dir,
+                                correct_tags_file=self.config.correct_tags_file,
+                                detect_tags_file=self.config.detect_tags_file,
+                                _loss_ignore_id=-100)
+            
+            # cache dataset
+            torch.save(train_dataset, os.path.join(self.processed_dir, 'train.pt'))
+            torch.save(dev_dataset, os.path.join(self.processed_dir, 'valid.pt'))
+            with open(cache_config_file, 'w') as f:
+                json.dump(current_config, f, ensure_ascii=False, indent=4)
+            logger.info(f"Cached dataset in condition of {current_config}")
         
         logger.info("训练集数据：{}条 验证集数据：{}条".format(len(train_dataset), len(dev_dataset)))
 
@@ -677,7 +784,6 @@ class FCGEC_SEQ2SEQ:
         return train_data, valid_data, test_data
 
     def train_valid_processor(self, out_path : str, dataset : dict, uuid : bool=True, out_flag : bool=True, out_type : bool=True, desc='Train'):
-        out_path = out_path.replace('.json', '.csv')
         out_data = []
 
         def convert_operator2seq(sentence : str, operate : list) -> list:
@@ -746,16 +852,21 @@ class FCGEC_SEQ2SEQ:
                 return sent
             operates = unpack(operate)
             return get_postsentence(sentence, operates)
-
+        
+        multiple_label_num = 0
         for datk in tqdm(dataset.keys(), desc='Processing {} data'.format(desc)):
             outs = []
             if uuid: outs.append(datk)
             outs.append(dataset[datk]['sentence'])
             if out_flag: outs.append(dataset[datk]['error_flag'])
             if out_type: outs.append(dataset[datk]['error_type'])
-            post_sentences = convert_operator2seq(dataset[datk]['sentence'], json.loads(dataset[datk]['operation'])) if dataset[datk]['error_flag'] == 1 else dataset[datk]['sentence']
-            outs.append('\t'.join(post_sentences))
+            filter_operate = operate_filter(dataset[datk]['sentence'], json.loads(dataset[datk]['operation']))
+            post_sentences = convert_operator2seq(dataset[datk]['sentence'], filter_operate) if dataset[datk]['error_flag'] == 1 else [dataset[datk]['sentence']]
+            if len(post_sentences) != 1:
+                multiple_label_num += 1
+            outs.append(post_sentences[0])
             out_data.append(outs)
+        print(f"{multiple_label_num} samples has multiple labels in one edit label.")
 
         columns = []
         if uuid: columns.append('UUID')
@@ -788,7 +899,6 @@ class FCGEC_SEQ2SEQ:
         print('%s data has been processed and saved at %s' % (desc, out_path))
 
     def testdata_processor(self, out_path : str, test_data : dict, uuid : bool=True):
-        out_path = out_path.replace('.json', '.csv')
         test_out_data = []
         for datk in tqdm(test_data.keys(), desc='Processing Test data'):
             outs = []
@@ -1102,6 +1212,7 @@ def get_data(dataset_name: str, model_name: str=None):
         'augment': Augment,
         'fangzhengaugment': FangZhengAugment,
         'fangzhengdapei': TextLabelDataset,
+        'pretrain': TextLabelDataset,
     }
 
     SPECIAL_DATA_MAP = {

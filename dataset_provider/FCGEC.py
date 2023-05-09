@@ -52,6 +52,14 @@ def data_filter(sentences : list, operates : list):
     return filter_operates
 
 
+def operate_filter(sentence : str, operates : list) -> list:
+    filter_operate = []
+    if len(operates) < 1: filter_operate.append({})
+    elif len(operates) < 2: filter_operate.append(operates[0])
+    elif len(operates) > 1: filter_operate.append(compare_iner_operate(sentence, operates))
+    return filter_operate
+
+
 def map_unk2word(tokens : list, sentence : str):
     map_dict, sentid = {}, 0
     for idx in range(1, len(tokens)-1):
@@ -148,6 +156,8 @@ def collate_fn_tagger(batch):
 
 INER_PUNCT = {'''“''' : '''"''', '''”“''' : '''"''', '''‘''' : "'", '''’''' : "'", '：' : ':',
               '''”''' : '''"''', '℅' : '%'}
+import re
+ENG_PATTERN = re.compile(r'[A-Za-z]', re.S)
 
 class TextWash(object):
     @staticmethod
@@ -161,7 +171,27 @@ class TextWash(object):
         for ele in punc_ls:
             sentence = sentence.replace(ele, punc_ls[ele])
         return sentence
+    
+    @staticmethod
+    def punc_wash_res(sentence : str, puncls = None, lower = True):
+        map_special_element, post_sentence = {}, ''
+        if puncls is None:
+            punc_ls = INER_PUNCT
+        else:
+            punc_ls = puncls
 
+        for i, item in enumerate(sentence):
+            if (ord(item) > 96 and ord(item) < 123) or (ord(item) > 64 and ord(item) < 91):
+                map_special_element[i] = item
+                if lower:
+                    post_sentence += item.lower()
+                else: post_sentence += item
+            elif item in punc_ls:
+                post_sentence += punc_ls[item]
+                map_special_element[i] = item
+            else:
+                post_sentence += item
+        return post_sentence, map_special_element
 
 class Point(object):
     """Point Class"""
@@ -244,13 +274,14 @@ class Converter(object):
 class PointConverter(Converter):
     """Converter from training target Switch Ops into pointor format."""
 
-    def __init__(self, args, auto : bool = False, **kwargs):
+    def __init__(self, args, auto : bool = False, spmap :bool = False, **kwargs):
         super(PointConverter, self).__init__(args)
         self.point_sequence = []
         self.post_sentence = ""
         self.origin_sentence = ""
         self.use_lm = False
         self.p2next = True
+        self.spmap = spmap
         try:
             if args.language_model: self.use_lm = True
         except: self.use_lm = False
@@ -311,12 +342,48 @@ class PointConverter(Converter):
         assert len(token) == len(post_ops['Switch'])
         return post_sentence, post_ops
 
+    def alignment_spmap(self, token : list, sentence : str, spmap : dict):
+        new_spmap = {}
+        tpidx = 0
+        pos_map = {}
+        sentence = sentence.replace(' ', '')
+        for eidx in range(len(token)):
+            if token[eidx] == '[CLS]' or token[eidx] == '[SEP]':
+                continue
+            if sentence[tpidx] == token[eidx] or token[eidx] == '[UNK]':
+                if token[eidx] == '[UNK]' and sentence[tpidx] not in spmap.values():
+                    spmap[tpidx] = sentence[tpidx]
+                pos_map[tpidx] = eidx
+                tpidx += 1
+            else:
+                tmptoken = token[eidx]
+                if tmptoken.startswith("#"):
+                    tmptoken = token[eidx].replace('#', '')
+                if tmptoken == sentence[tpidx] or tmptoken == '[UNK]':
+                    pos_map[tpidx] = eidx
+                    tpidx += 1
+                else:
+                    tlen = len(tmptoken)
+                    for cidx in range(tlen):
+                        if tmptoken[cidx] == sentence[tpidx + cidx]:
+                            pos_map[tpidx + cidx] = eidx
+                        else:
+                            raise Exception("The sample can not be convert to token case.")
+                    tpidx += tlen
+        for trans in spmap:
+            if pos_map[trans] not in new_spmap: new_spmap[pos_map[trans]] = spmap[trans]
+            else: new_spmap[pos_map[trans]] += spmap[trans]
+        return new_spmap
+
     def convert_point(self, sentence : str, ops : dict, **kwargs):
+        if self.spmap: sentence, specials = sentence
+        else: specials = None
         self.origins = list(range(len(sentence)))
         if 'Switch' not in ops.keys():
             if self.use_lm:
                 self.point_sequence.append(Point(0, '[CLS]'))
                 if 'token' in kwargs.keys():
+                    if specials: self.spmap = self.alignment_spmap(kwargs['token'], sentence, specials)
                     sentence = kwargs['token']
                 self.origins = list(range(len(sentence)))
                 self.point_sequence += [Point(ele+1, sentence[ele]) for ele in self.origins]
@@ -657,6 +724,7 @@ class SwitchDataset(Dataset):
         self.tokenizer     = BertTokenizer.from_pretrained(args.lm_path, cache_dir='./.cache')
         self.padding_size  = args.padding_size
         self.desc = desc
+        self.spmap = args.sp_map
         # DATA PROCESSER
         self.error_number  = 0
         self.sentences, self.label   = self._read_csv(path)
@@ -699,17 +767,19 @@ class SwitchDataset(Dataset):
         '''
         point_seqs, wd_collect, post_labels, token_collection = [], [], [], []
         for idx in tqdm(range(len(sentences)), desc='Processing ' + self.desc + ' Dataset'):
-            token = self.tokenizer.tokenize(TextWash.punc_wash(sentences[idx]))
+            token = self.tokenizer.tokenize(TextWash.punc_wash(sentences[idx]) if not self.spmap else TextWash.punc_wash_res(sentences[idx])[0])
             kwargs = {
-                'sentence' : TextWash.punc_wash(sentences[idx]),
+                'sentence' : TextWash.punc_wash(sentences[idx]) if not self.spmap else TextWash.punc_wash_res(sentences[idx]),
                 'ops' : labels[idx],
                 'token' : token
             }
             tokens = [self.CLS] + token + [self.SEP]
             try:
-                pointer = PointConverter(self.args, auto=True, **kwargs)
+                pointer = PointConverter(self.args, auto=True, spmap=self.spmap, **kwargs)
                 wd_idxs = self.tokenizer.convert_tokens_to_ids(tokens)
             except:
+                import traceback
+                print(traceback.print_exc())
                 self.error_number += 1
                 print(sentences[idx])
                 continue
@@ -927,7 +997,7 @@ class GeneratorDataset(Dataset):
 
     def _extract_gendata(self, sentences : list, labels : list) -> tuple:
         '''
-        Extract Data that Contains I / MI
+        Extract Data that Contains I / MI / M
         :param sentences: sentences collection list
         :param labels: labels list
         :return: extracted sentence, label
@@ -943,7 +1013,7 @@ class GeneratorDataset(Dataset):
             if 'Insert' in label or 'Modify' in label:
                 if 'Modify' in label:
                     mod_op = label['Modify']
-                    MI_flags = [True if 'INS' in mod['tag'] else False for mod in mod_op]
+                    MI_flags = [True if 'INS' in mod['tag'] or '+' not in mod['tag'] else False for mod in mod_op]
                     if True not in MI_flags:
                         continue
                 post_sentences.append(sentence)

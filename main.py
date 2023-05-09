@@ -13,6 +13,7 @@ import os
 import importlib
 import traceback
 from tqdm import tqdm
+import zipfile
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -20,7 +21,7 @@ def parse_args():
                         help='bert/softmaskedbert/stgjoint/seq2seq/seq2edit/gector/llm/llama/llama_quant')    
     parser.add_argument('--task_mode', type=str, default='train',
                         help='train/tune/test/infer/augmentation')  
-    parser.add_argument('--dataset', type=str, default='mucgec',
+    parser.add_argument('--dataset', type=str, default='pretrain',
                         help='hybridset/nlpcc2018task2/fangzhengspell/fangzhenggrammar/guangming/peopledaily/augment/fangzhengaugment/fangzhengdapei/fcgec/mucgec')  
     parser.add_argument('--pre_save_dir', type=str, default='results',
                         help='root path to save results.')
@@ -99,6 +100,8 @@ class ExperimentsOfGEC:
         else:
             train_loader, val_loader, test_loader = dataset_.get_train_val_dataloader(model.tokenizer)
         # do train
+        if self.args.load:
+            train.load(self.args.load)
         best_score = train.do_train(train_loader, val_loader)
         # save result
         logger.info(get_time() + '本次最优结果：%.4f' % best_score)
@@ -175,22 +178,31 @@ class ExperimentsOfGEC:
             raise NotImplementedError()
         json_results = train.do_infer(dataloader, mode="INFER")
         save_path = os.path.join(self.args.save_dir, f'{self.args.model}-{self.args.dataset}-{self.args.task_mode}.json')
-        save_txt = os.path.join(self.args.save_dir, f'MuCGEC_test.txt')
         with open(save_path, "w") as f:
             json.dump(json_results, f, ensure_ascii=False, indent=4)
-        with open(save_txt, "w") as f:
-            for item in json_results:
-                f.write("%s\t%s\t%s\n" % (item["id"], item["src"], item["predict"]))
-        ## FCGEC output
-        fcgec_json = {}
-        for item in json_results:
-            error_flag = 1 if item["src"] != item["predict"] else 0
-            fcgec_json[item['id']] = {"error_flag": error_flag, "error_type": "IWO", "correction": item["predict"]}
-        fcgec_path = os.path.join(self.args.save_dir, 'fcgec_predict.json')
-        with open(fcgec_path, "w") as f:
-            json.dump(fcgec_json, f, ensure_ascii=False, indent=4)      
-          
         logger.info(get_time() + f"Results have been stored in {save_path}.")
+        
+        ## MuCGEC output
+        if self.args.dataset == 'mucgec':
+            save_txt = os.path.join(self.args.save_dir, f'MuCGEC_test.txt')
+            with open(save_txt, "w") as f:
+                for item in json_results:
+                    f.write("%s\t%s\t%s\n" % (item["id"], item["src"], item["predict"]))
+            with zipfile.ZipFile(os.path.join(self.args.save_dir, 'submit.zip'), mode='w') as zipf:
+                zipf.write(save_txt, 'MuCGEC_test.txt')
+        
+        ## FCGEC output
+        if self.args.dataset == 'fcgec':
+            fcgec_json = {}
+            for item in json_results:
+                error_flag = 1 if item["src"] != item["predict"] else 0
+                fcgec_json[item['id']] = {"error_flag": error_flag, "error_type": "IWO", "correction": item["predict"]}
+            fcgec_path = os.path.join(self.args.save_dir, 'predict.json')
+            with open(fcgec_path, "w") as f:
+                json.dump(fcgec_json, f, ensure_ascii=False, indent=4)      
+            with zipfile.ZipFile(os.path.join(self.args.save_dir, 'predict.zip'), mode='w') as zipf:
+                zipf.write(fcgec_path, 'predict.json')
+        
         return json_results
 
 
@@ -355,6 +367,28 @@ class ExperimentsOfLLM:
         with open(save_path, "w") as f:
             json.dump(json_results, f, ensure_ascii=False, indent=4)
         logger.info(get_time() + f"Results have been stored in {save_path}.")
+
+        ## MuCGEC output
+        if self.args.dataset == 'mucgec':
+            save_txt = os.path.join(self.args.save_dir, f'MuCGEC_test.txt')
+            with open(save_txt, "w") as f:
+                for item in json_results:
+                    f.write("%s\t%s\t%s\n" % (item["id"], item["src"], item["predict"]))
+            with zipfile.ZipFile(os.path.join(self.args.save_dir, 'submit.zip'), mode='w') as zipf:
+                zipf.write(save_txt, 'MuCGEC_test.txt')
+        
+        ## FCGEC output
+        if self.args.dataset == 'fcgec':
+            fcgec_json = {}
+            for item in json_results:
+                error_flag = 1 if item["src"] != item["predict"] else 0
+                fcgec_json[item['id']] = {"error_flag": error_flag, "error_type": "IWO", "correction": item["predict"]}
+            fcgec_path = os.path.join(self.args.save_dir, 'predict.json')
+            with open(fcgec_path, "w") as f:
+                json.dump(fcgec_json, f, ensure_ascii=False, indent=4)      
+            with zipfile.ZipFile(os.path.join(self.args.save_dir, 'predict.zip'), mode='w') as zipf:
+                zipf.write(fcgec_path, 'predict.json')
+        
         return json_results
     
     def conduct(self):
@@ -428,7 +462,7 @@ if __name__ == '__main__':
     args.device = 'cuda:'+ str(args.device) if args.device >= 0 else 'cpu'
     # set save directory
     time_str = time.strftime('%Y%m%d-%H%M',time.localtime())
-    args.save_dir = os.path.join(args.pre_save_dir, f'{args.model}-{args.dataset}-{time_str}')
+    args.save_dir = os.path.join(args.pre_save_dir, f'{args.model}-{args.dataset}-{args.task_mode}-{time_str}')
 
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)

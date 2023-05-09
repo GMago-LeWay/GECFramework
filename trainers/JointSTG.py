@@ -1,5 +1,7 @@
 """
 github repo
+https://github.com/xlxwalex/FCGEC
+updated to Apr 5, 2023 commit
 """
 # Import Libs
 import torch
@@ -12,7 +14,7 @@ import os
 import json
 from torch.utils.data import DataLoader
 from transformers import AdamW
-from sklearn.metrics import  classification_report
+from sklearn.metrics import classification_report
 import scipy.io as sio
 
 import numpy as np
@@ -20,7 +22,7 @@ from argparse import Namespace
 import operator as op
 
 from utils.JointSTG import TAGGER_MAP, INSERT_TAG, MODIFY_TAG, KEEP_TAG
-from utils.JointSTG import padding, attention_mask, save_model, clip_maxgenerate, reconstruct_switch, reconstruct_tagger, reconstruct_tagger_V2, softmax_logits, SwitchSearch, fillin_tokens, report_pipeline_output
+from utils.JointSTG import padding, attention_mask, save_model, clip_maxgenerate, reconstruct_switch, reconstruct_tagger, reconstruct_tagger_V2, softmax_logits, SwitchSearch, fillin_tokens, report_pipeline_output, convert_spmap2tokens, convert_spmap_tg, convert_spmap_sw
 from dataset_provider.FCGEC import SwitchDataset, TaggerDataset, GeneratorDataset, collate_fn_base, collate_fn_tagger
 from trainers.base import Trainer
 
@@ -880,6 +882,12 @@ class JointTrainer(Trainer):
         switch_tokens = self._apply_switch_operator(tokens_ls, pred_label)
         switch_gts    = self._apply_switch_operator(tokens_ls, truth_label)
 
+        # Special map
+        if self.args.sp_map:
+            sp_maps = [pt.spmap for pt in switch_test.point_seq]
+            sw_spmaps = convert_spmap_sw(sp_maps, pred_label)
+        else: sw_spmaps = None
+
         logger.info('Construct Tagger Data')
         tagger_test = TaggerDataset(self.args, test_dir, 'test', switch_tokens)
         TestLoader = DataLoader(tagger_test, batch_size=self.args.batch_size, shuffle=False, drop_last=False, collate_fn=collate_fn_tagger)
@@ -906,10 +914,16 @@ class JointTrainer(Trainer):
 
         logger.info('Construct Generator Data')
         tag_construct = (pred_tagger, pred_comb)
-        tag_tokens, mlm_tgt_masks = reconstruct_tagger_V2(np.array(tagger_tokens), tag_construct)
-        tag_gts_tokens, _ = reconstruct_tagger_V2(padding(switch_gts, self.args.padding_size, self.args.padding_val),  tag_construct_gts)  # EM
+        tag_tokens, mlm_tgt_masks, tg_mapper = reconstruct_tagger_V2(np.array(tagger_tokens), tag_construct)
+        tag_gts_tokens, _, _ = reconstruct_tagger_V2(padding(switch_gts, self.args.padding_size, self.args.padding_val),  tag_construct_gts)  # EM
         generator_test = GeneratorDataset(self.args, test_dir, 'test', tag_tokens, mlm_tgt_masks)
         TestLoader = DataLoader(generator_test, batch_size=self.args.batch_size, shuffle=False, drop_last=False, collate_fn=collate_fn_base)
+
+        # Special map
+        if self.args.sp_map:
+            tg_spmaps = convert_spmap_tg(sw_spmaps, tg_mapper)
+        else:
+            tg_spmaps = None
 
         pred_mlm, truth_mlm, met_masks = [], [], []
         for step, batch_data in enumerate(tqdm(TestLoader, desc='Processing Generator')):
@@ -933,9 +947,12 @@ class JointTrainer(Trainer):
         print('>>> Start to constrcut final output')
         logger.info('>>> Start to constrcut final output')
         outputs = fillin_tokens(tag_tokens, mlm_tgt_masks, pred_mlm)
-        switch_tokens = [''.join(switch_test.tokenizer.convert_ids_to_tokens(ele[1:-1])).replace('##', '').replace('[UNK]', '"').replace('[PAD]', '') for ele in switch_tokens]
-        tagger_tokens = [''.join(tagger_test.tokenizer.convert_ids_to_tokens(ele[1:-1])).replace('##', '').replace('[UNK]', '"').replace('[PAD]', '') for ele in tag_tokens]
-        generate_tokens = [''.join(generator_test.tokenizer.convert_ids_to_tokens(ele[1:-1])).replace('##', '').replace('[UNK]', '"').replace('[PAD]', '') for ele in outputs]
+        switch_tokens = [''.join(convert_spmap2tokens(switch_test.tokenizer.convert_ids_to_tokens(ele[1:-1]), sw_spmaps[i])).replace('##', '').replace('[PAD]', '').replace('[UNK]', '') for i, ele in enumerate(switch_tokens)] \
+            if self.args.sp_map else  [''.join(switch_test.tokenizer.convert_ids_to_tokens(ele[1:-1])).replace('##', '').replace('[UNK]', '"').replace('[PAD]', '') for ele in switch_tokens]
+        tagger_tokens = [''.join(convert_spmap2tokens(switch_test.tokenizer.convert_ids_to_tokens(ele[1:-1]), tg_spmaps[i])).replace('##', '').replace('[PAD]', '').replace('[UNK]', '') for i, ele in enumerate(tag_tokens)] \
+            if self.args.sp_map else [''.join(tagger_test.tokenizer.convert_ids_to_tokens(ele[1:-1])).replace('##', '').replace('[UNK]', '"').replace('[PAD]', '') for ele in tag_tokens]
+        generate_tokens = [''.join(convert_spmap2tokens(switch_test.tokenizer.convert_ids_to_tokens(ele[1:-1]), tg_spmaps[i])).replace('##', '').replace('[PAD]', '').replace('[UNK]', '') for i, ele in enumerate(outputs)] \
+            if self.args.sp_map else [''.join(generator_test.tokenizer.convert_ids_to_tokens(ele[1:-1])).replace('##', '').replace('[UNK]', '"').replace('[PAD]', '') for ele in outputs]
         report_pipeline_output(os.path.join(self.global_args.save_dir, self.infer_export), 
                                [switch_test.sentences[sent_id] for sent_id in switch_test.final_sentences_ids], 
                                switch_test.label, switch_tokens, tagger_tokens, generate_tokens, uuid=uuid)

@@ -122,7 +122,7 @@ def reconstruct_tagger(tag_tokens : np.array, tag_preds : tuple) -> tuple:
     return post_tokens, mlm_tgt_masks
 
 def reconstruct_tagger_V2(tag_tokens : np.array, tag_preds : tuple, return_flag : bool = False) -> tuple:
-    post_tokens, mlm_tgt_masks, op_flag = [], [], []
+    post_tokens, mlm_tgt_masks, op_flag, sp_mapper = [], [], [], []
     tagger, insmod = tag_preds
     batch_size, seq_len = tag_tokens.shape
     for lidx in range(batch_size):
@@ -130,42 +130,58 @@ def reconstruct_tagger_V2(tag_tokens : np.array, tag_preds : tuple, return_flag 
         tag_cur = tagger[lidx]
         insmod_cur = insmod[lidx]
         token_cur = tag_tokens[lidx]
-        flag = False
+        flag, curidx, mapper = False, -1, {}
         for cidx in range(seq_len):
             if tag_cur[cidx] == TAGGER_MAP['PAD']: break   # Pad ignore
             elif tag_cur[cidx] == TAGGER_MAP[KEEP_TAG]:
                 mlm_mask.append(0)
                 post_token.append(token_cur[cidx])
+                curidx += 1
+                mapper[cidx] = curidx
             elif tag_cur[cidx] in [TAGGER_MAP[DELETE_TAG], TAGGER_MAP[MODIFY_DELETE_TAG]]:
                 flag = True
+                mapper[cidx] = curidx
                 continue
             elif tag_cur[cidx] == TAGGER_MAP[INSERT_TAG]:
                 flag = True
                 insert_num = insmod_cur[cidx]
-                if (insert_num < 1): continue
+                curidx += 1
+                if (insert_num < 1):
+                    mapper[cidx] = curidx
+                    continue
                 post_token.append(token_cur[cidx])
                 mlm_mask.append(0)
                 post_token.extend([MASK_LM_ID] * insert_num)
                 mlm_mask.extend([1] * insert_num)
+                curidx += insert_num
+                mapper[cidx] = curidx
             elif tag_cur[cidx] == TAGGER_MAP[MOIFY_ONLY_TAG]:
                 flag = True
                 mlm_mask.append(1)
                 post_token.append(MASK_LM_ID)
+                curidx += 1
+                mapper[cidx] = curidx
             elif tag_cur[cidx] == TAGGER_MAP[MODIFY_TAG]:
                 flag = True
                 modify_num = insmod_cur[cidx]
                 post_token.append(MASK_LM_ID)
                 mlm_mask.append(1)
-                if (modify_num < 1): continue
+                curidx += 1
+                if (modify_num < 1):
+                    mapper[cidx] = curidx
+                    continue
                 post_token.extend([MASK_LM_ID] * modify_num)
                 mlm_mask.extend([1] * modify_num)
+                curidx += (modify_num)
+                mapper[cidx] = curidx
         post_tokens.append(post_token)
         mlm_tgt_masks.append(mlm_mask)
         op_flag.append(flag)
+        sp_mapper.append(mapper)
     if return_flag:
-        return post_tokens, mlm_tgt_masks, op_flag
+        return post_tokens, mlm_tgt_masks, sp_mapper, op_flag
     else:
-        return post_tokens, mlm_tgt_masks
+        return post_tokens, mlm_tgt_masks, sp_mapper
 
 class SwitchSearch(object):
     def __init__(self, args : Namespace, mode : str = 'vabm', pad : bool = True):
@@ -392,3 +408,42 @@ def obtain_uuid(file_path : str):
         test_data = json.load(fp)
     fp.close()
     return list(test_data.keys())
+
+
+def convert_spmap_sw(sp_map : list, sw_labels : np.array) -> list:
+    new_spmap = []
+    for idx in range(len(sp_map)):
+        mapper = sp_map[idx]
+        if isinstance(mapper, bool): new_spmap.append(None)
+        else:
+            swlabel = sw_labels[idx]
+            sw_pidx, pt = swlabel[0], 0
+            t_idx, map_trans = 0, {}
+            while sw_pidx not in [0, -1]:
+                map_trans[sw_pidx - 1] = pt
+                sw_pidx = swlabel[sw_pidx]
+                pt += 1
+            spmap = dict([[map_trans[ele], mapper[ele]] for ele in mapper if ele in map_trans])
+            new_spmap.append(spmap)
+    return new_spmap
+
+def convert_spmap_tg(sp_map : list, tg_mapper : list) -> list:
+    new_spmap = []
+    for idx in range(len(sp_map)):
+        spmapper = sp_map[idx]
+        tgmapper = tg_mapper[idx]
+        mapper = {}
+        if not spmapper: new_spmap.append(None)
+        else:
+            for sp in spmapper:
+                if sp in tgmapper and tgmapper[sp] >= 0: mapper[tgmapper[sp]] = spmapper[sp]
+            new_spmap.append(mapper)
+    return new_spmap
+
+def convert_spmap2tokens(tokens : list, sp_maps : dict):
+    if 'led' in tokens:
+        print()
+    if not sp_maps: return tokens
+    for i,x in enumerate(tokens):
+        if i in sp_maps: tokens[i] = sp_maps[i]
+    return tokens

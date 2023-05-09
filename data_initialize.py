@@ -126,7 +126,13 @@ def convert_fcgec_seq2seq():
     data = get_data('fcgec', 'stgjoint')(None, config)
     data.convert_seq2seq()
 
+def process_gector_multi_append_data(dataset):
+    config = Config('gector', dataset, False).get_config()
+    data = get_data(dataset, 'gector')(None, config)
+    data.split_multi_append()
+
 if __name__ == "__main__":
-    preprocess_stgjoint('mucgec')
+    # preprocess_stgjoint('mucgec')
     # preprocess_seq2edit('augment')
-    # convert_fcgec_seq2seq()
+    convert_fcgec_seq2seq()
+    # process_gector_multi_append_data('pretrain')

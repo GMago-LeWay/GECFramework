@@ -40,6 +40,7 @@ DATA_DIR_NAME = {
     'augment': "clg-augment",
     'fangzhengaugment': "FangZhengAugment",
     'fangzhengdapei': "FangZhengDapei",
+    'pretrain': "PreTrainSetLarge",
 }
 
 MODEL_CORR_DATA = {
@@ -85,6 +86,7 @@ class Config:
             'augment': self.__Augment,
             'fangzhengaugment': self.__FangZhengAugment,
             'fangzhengdapei': self.__FangZhengDapei,
+            'pretrain': self.__PreTrainSet,
 
             ## For special
             'fcgec_seq2seq': self.__FCGEC_Seq2Seq,
@@ -283,7 +285,14 @@ class Config:
         }
 
         return dataConfig
-
+    
+    def __PreTrainSet(self):
+        dataConfig = {
+            'text_cut': 128,
+            'batch_size': 128,
+            'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch   
+        }
+        return dataConfig
 
     def __BERT(self, tune):
 
@@ -543,36 +552,35 @@ class Config:
 
             # pretrained model and tokenizer
             'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-macbert-base'),
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-macbert-base'), # chinese-macbert-base, structbert-large-zh
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
 
             # model label vocab
             'ctc_vocab_dir': os.path.join(MODEL_ROOT_DIR, 'GECToR', 'ctc_vocab'),
             'detect_tags_file': "ctc_detect_tags.txt",
-            'correct_tags_file': "ctc_correct_tags.txt", # ctc_correct_tags.txt, ctc_correct_cail2022_tags.txt
+            'correct_tags_file': "ctc_correct_tags.txt", # ctc_correct_tags.txt, ctc_correct_cail2022_tags.txt, mucgec_correct_tags.txt
             'detect_vocab_size': 2,
             'correct_vocab_size': None,        # lazy init
 
             # training setting
-            'warmup_proportion': 0.01,
-            'learning_rate': 3e-5,
+            'warmup_proportion': 0.02,
+            'learning_rate': 2e-5,     # 3e-5
             'adam_epsilon': 1e-8,
             'use_tensorboard': False,
-            # 'batch_size': 64,
-            'epochs': 20,
-            # 'eval_step': 100,
+            'epochs': 10,
             'max_grad_norm': 1.0,
 
             # infer setting
-            'iteration': 3,
+            'iteration': 5,
         }
 
         return NotImplementedError() if tune else Config
 
     def __GECToR_Data(self):
         dataConfig = {
-            'text_cut': 256,
-            'batch_size': 48,
+            'use_multi_append': True,      # use data where multi-append situation are split into multiple sentences.
+            'text_cut': 512,
+            'batch_size': 32,
             'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch   
         }
 
@@ -594,6 +602,7 @@ class Config:
 
             # convertor setting
             'p2next': True,
+            'sp_map': True, # special mapping
 
             # search params
             'sw_mode': 'rsgs',

@@ -716,6 +716,26 @@ class DatasetCTC(Dataset):
                     delete_idx_list.append(i)
 
         return replace_idx_list, delete_idx_list, missing_idx_list
+    
+    @staticmethod
+    def char_edit_list(src_text: str, trg_text: str):
+        src_text_list = list(src_text)
+        src_text_edit_list = [[] for i in range(len(src_text_list))]
+        r = SequenceMatcher(None, src_text, trg_text)
+        diffs = r.get_opcodes()
+
+        for diff in diffs:
+            tag, i1, i2, j1, j2 = diff
+            if tag == 'replace' and i2 - i1 == j2 - j1:
+                for i, j in zip(range(i1, i2), range(j1, j2)):
+                    src_text_edit_list[i].append('$REPLACE_' + trg_text[j])
+            elif tag == 'insert':
+                for j in range(j1, j2):
+                    src_text_edit_list[i1-1].append('$APPEND_' + trg_text[j])
+            elif tag == 'delete':
+                for i in range(i1, i2):
+                    src_text_edit_list[i].append('$DELETE')
+        return src_text_edit_list
 
     def __getitem__(self, item: int) -> Dict[str, torch.Tensor]:
         src, trg = self.src_texts[item], self.trg_texts[item]

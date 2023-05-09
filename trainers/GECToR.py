@@ -178,6 +178,17 @@ class GECToRTrainer(Trainer):
                             os.makedirs(output_dir)
                         torch.save(model_to_save.state_dict(),
                                    os.path.join(output_dir, '{}_model.pt'.format(self.args.name)))
+        
+        # a final save
+        model_to_save = (
+            self.model.module if hasattr(self.model, "module") else self.model
+        )
+        output_dir = self.global_args.save_dir
+        logger.info('Saving model checkpoint to {}'.format(output_dir))
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        torch.save(model_to_save.state_dict(),
+                    os.path.join(output_dir, '{}_model_final.pt'.format(self.args.name)))
         return best_c_f1
 
     def do_test(self, dataloader, mode="VAL"):
@@ -264,7 +275,6 @@ class GECToRTrainer(Trainer):
                             correct_outputs = np.argmax(correct_outputs, axis=-1).squeeze()[:real_length]
                             # print(detect_outputs)
                             # print(correct_outputs)
-                            res = {}
                             pre_text = []
                             for d, c, t in zip(detect_outputs, correct_outputs, ["始"] + text):
                                 clabel = self.id2label[c]
@@ -291,4 +301,5 @@ class GECToRTrainer(Trainer):
     
     def load(self, save_dir=None):
         default_path = os.path.join(save_dir, '{}_model.pt'.format(self.args.name))
-        self.model.load_state_dict(torch.load(default_path))
+        self.model.load_state_dict(torch.load(default_path, map_location='cpu'))
+        logger.info(f"Successfully load weights from {default_path}")
