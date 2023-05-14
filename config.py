@@ -48,6 +48,7 @@ MODEL_CORR_DATA = {
     'seq2seq': 'mucgec_seq2seq',
     'seq2edit': 'mucgec_edit',
     'gector': 'gector_data',
+    'chatglm': 'transformers',
 }
 
 DATA_ROOT_DIR = '/home/liwei/workspace/datasets'
@@ -70,6 +71,7 @@ class Config:
             'llm': self.__LLM,
             'llama': self.__LLAMA,
             'llama_quant': self.__LLAMA_QUANT,
+            'chatglm': self.__ChatGLM,
             None: self.__NULL,
         }
 
@@ -96,6 +98,7 @@ class Config:
             'mucgec_seq2seq': self.__MuCGEC,
             'mucgec_edit': self.__MuCGEC_Edit,
             'gector_data': self.__GECToR_Data,
+            'transformers': self.__TransformersData,
 
             None: self.__NULL,
         }
@@ -508,6 +511,38 @@ class Config:
         }
 
         return NotImplementedError() if tune else Config 
+    
+    def __ChatGLM(self, tune):
+        Config = {
+            # identifier
+            'name': 'chatglm',
+
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chatglm-6b'),
+
+            # config
+            'max_source_length': 100,
+            'max_target_length': 100,
+            'per_device_train_batch_size': 16,
+            'per_device_eval_batch_size': 8,
+            'gradient_accumulation_steps': 1,
+            'num_train_epochs': 2,
+            'logging_steps': 100,
+            'save_steps': 1000,
+            'learning_rate': 2e-2,
+            'pre_seq_len': 128,
+            'quantization_bit': 4,
+        }
+
+        return NotImplementedError() if tune else Config 
+
+    def __TransformersData(self):
+        dataConfig = {
+
+        }
+
+        return dataConfig
 
 
     def __Seq2Edit(self, tune):

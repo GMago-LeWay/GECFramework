@@ -131,8 +131,14 @@ def process_gector_multi_append_data(dataset):
     data = get_data(dataset, 'gector')(None, config)
     data.split_multi_append()
 
+def split_data(dataset):
+    config = Config(None, dataset, False).get_config()
+    data: TextLabelDataset = get_data(dataset)(None, config)
+    data.train_val_test_data()
+
 if __name__ == "__main__":
     # preprocess_stgjoint('mucgec')
     # preprocess_seq2edit('augment')
-    convert_fcgec_seq2seq()
+    # convert_fcgec_seq2seq()
     # process_gector_multi_append_data('pretrain')
+    split_data('augment')

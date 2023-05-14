@@ -10,6 +10,7 @@ MODULE_MAP = {
     'llm': ('trainers.CausalLM', 'CausalLMTrain'),
     'llama': ('trainers.Llama', 'LlamaTrainer'),
     'llama_quant': ('trainers.Llama', 'LlamaTrainer'),
+    'chatglm': ('trainers.ChatGLM', 'ChatGLMTrainer'),
 }
 
 

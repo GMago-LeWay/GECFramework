@@ -10,6 +10,7 @@ MODULE_MAP = {
     'llm': ('models.CausalLM', 'CausalLM'),
     'llama': ('models.Llama', 'LlamaNormal7B'),
     'llama_quant': ('models.Llama', 'LlamaQuant'),
+    'chatglm': ('models.ChatGLM', 'ChatGLM'),
 }
 
 

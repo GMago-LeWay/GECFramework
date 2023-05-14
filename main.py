@@ -18,7 +18,7 @@ import zipfile
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='gector',
-                        help='bert/softmaskedbert/stgjoint/seq2seq/seq2edit/gector/llm/llama/llama_quant')    
+                        help='bert/softmaskedbert/stgjoint/seq2seq/seq2edit/gector/llm/llama/llama_quant/chatglm')    
     parser.add_argument('--task_mode', type=str, default='train',
                         help='train/tune/test/infer/augmentation')  
     parser.add_argument('--dataset', type=str, default='pretrain',
@@ -89,13 +89,13 @@ class ExperimentsOfGEC:
     def run(self, config):
         dataset_ = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
         model_to_be_init = get_model(model=self.args.model)
-        if self.args.model in ['seq2seq', 'seq2edit']:
+        if self.args.model in ['seq2seq', 'seq2edit', 'chatglm']:
             model = model_to_be_init(config=config, args=self.args)
         else:
             model = model_to_be_init(config=config, args=self.args).to(self.args.device)
         train_to_be_init = get_train(model=self.args.model)
         train: Trainer = train_to_be_init(args=self.args, config=config, model=model)
-        if self.args.model in ['seq2seq', 'seq2edit']:
+        if self.args.model in ['seq2seq', 'seq2edit', 'chatglm']:
             train_loader, val_loader, test_loader = dataset_.train_val_test_data()
         else:
             train_loader, val_loader, test_loader = dataset_.get_train_val_dataloader(model.tokenizer)
@@ -456,6 +456,7 @@ EXPERIMENTS = {
     'llm': ExperimentsOfLLM,
     'llama': ExperimentsOfLLM,
     'llama_quant': ExperimentsOfLLM,
+    'chatglm': ExperimentsOfGEC,
 }
 
 if __name__ == '__main__':

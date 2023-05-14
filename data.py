@@ -249,6 +249,21 @@ class TextLabelDataset:
                 with open(os.path.join(joint_save_dir, f'{split}.id.json'), 'w') as f:
                     json.dump(Ids, f, indent=4)
 
+
+class TransformersDataset(TextLabelDataset):
+    def __init__(self, args=None, config=None) -> None:
+        super().__init__(args, config)
+    
+    def get_collate_fn(self, tokenizer=None, labeled=True):
+        return super().get_collate_fn(tokenizer, labeled)
+    
+    def get_train_val_dataloader(self, tokenizer) -> tuple[DataLoader, DataLoader, DataLoader]:
+        return None, None, None
+    
+    def get_test_dataloader(self, tokenizer=None) -> DataLoader:
+        return None
+
+
 class MuCGECSeq2SeqDataset:  ## MuCGEC
     def __init__(self, args=None, config=None) -> None:
         self.args = args
@@ -1220,6 +1235,7 @@ def get_data(dataset_name: str, model_name: str=None):
         'mucgec_edit': MuCGECEditDataset,
         'joint': FCGEC,
         'gector_data': GECToRDataset,
+        'transformers': TransformersDataset,
     }
 
     if model_name in MODEL_CORR_DATA:
