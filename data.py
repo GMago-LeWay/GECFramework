@@ -400,6 +400,7 @@ class MuCGECSeq2SeqDataset:  ## MuCGEC
             item_id, src, tgt = eval(segments[0].strip()), segments[1].strip(), segments[2].strip()
             valid_data_item = {"id": item_id, "text": src, "label": tgt}
             for i in range(3, len(segments)):
+                # TODO: 这种多标签方式好吗。。
                 valid_data_item[f'label{i-1}'] = segments[i].strip()
             new_val_data.append(valid_data_item)
 
@@ -599,45 +600,46 @@ class GECToRDataset(TextLabelDataset):
             'ctc_vocab_dir': self.config.ctc_vocab_dir,
             'detect_tags_file': self.config.detect_tags_file,
             'correct_tags_file': self.config.correct_tags_file,
+            'reward_estimate': self.config.reward_estimate,
         }
         cache_config = None
         cache_config_file = os.path.join(self.processed_dir, 'config.json')
         if os.path.exists(cache_config_file):
             with open(cache_config_file) as f:
                 cache_config = json.load(f)
-        ## cache check
-        train_cache_dir = os.path.join(self.processed_dir, 'train.pt')
-        valid_cache_dir = os.path.join(self.processed_dir, 'valid.pt')
-        if cache_config == current_config:
-            logger.info(f'loading cached dataset...')
-            train_dataset = torch.load(train_cache_dir, map_location='cpu')
-            dev_dataset = torch.load(valid_cache_dir, map_location='cpu')
-        else:
-            logger.info(f'construct dataset and cache...')
-            train_dataset = DatasetCTC(in_model_dir=self.config.pretrained_model,
-                                src_texts=[item['text'] for item in train],
-                                trg_texts=[item['label'] for item in train],
-                                max_seq_len=self.config.text_cut,
-                                ctc_label_vocab_dir=self.config.ctc_vocab_dir,
-                                correct_tags_file=self.config.correct_tags_file,
-                                detect_tags_file=self.config.detect_tags_file,
-                                _loss_ignore_id=-100)
+        # ## cache check
+        # train_cache_dir = os.path.join(self.processed_dir, 'train.pt')
+        # valid_cache_dir = os.path.join(self.processed_dir, 'valid.pt')
+        # if cache_config == current_config:
+        #     logger.info(f'loading cached dataset...')
+        #     train_dataset = torch.load(train_cache_dir, map_location='cpu')
+        #     dev_dataset = torch.load(valid_cache_dir, map_location='cpu')
+        # else:
+        logger.info(f'construct dataset and cache...')
+        train_dataset = DatasetCTC(in_model_dir=self.config.pretrained_model,
+                            src_texts=[item['text'] for item in train],
+                            trg_texts=[item['label'] for item in train],
+                            max_seq_len=self.config.text_cut,
+                            ctc_label_vocab_dir=self.config.ctc_vocab_dir,
+                            correct_tags_file=self.config.correct_tags_file,
+                            detect_tags_file=self.config.detect_tags_file,
+                            _loss_ignore_id=-100)
+        
+        dev_dataset = DatasetCTC(in_model_dir=self.config.pretrained_model,
+                            src_texts=[item['text'] for item in val],
+                            trg_texts=[item['label'] for item in val],
+                            max_seq_len=self.config.text_cut,
+                            ctc_label_vocab_dir=self.config.ctc_vocab_dir,
+                            correct_tags_file=self.config.correct_tags_file,
+                            detect_tags_file=self.config.detect_tags_file,
+                            _loss_ignore_id=-100)
             
-            dev_dataset = DatasetCTC(in_model_dir=self.config.pretrained_model,
-                                src_texts=[item['text'] for item in val],
-                                trg_texts=[item['label'] for item in val],
-                                max_seq_len=self.config.text_cut,
-                                ctc_label_vocab_dir=self.config.ctc_vocab_dir,
-                                correct_tags_file=self.config.correct_tags_file,
-                                detect_tags_file=self.config.detect_tags_file,
-                                _loss_ignore_id=-100)
-            
-            # cache dataset
-            torch.save(train_dataset, os.path.join(self.processed_dir, 'train.pt'))
-            torch.save(dev_dataset, os.path.join(self.processed_dir, 'valid.pt'))
-            with open(cache_config_file, 'w') as f:
-                json.dump(current_config, f, ensure_ascii=False, indent=4)
-            logger.info(f"Cached dataset in condition of {current_config}")
+            # # cache dataset
+            # torch.save(train_dataset, os.path.join(self.processed_dir, 'train.pt'))
+            # torch.save(dev_dataset, os.path.join(self.processed_dir, 'valid.pt'))
+            # with open(cache_config_file, 'w') as f:
+            #     json.dump(current_config, f, ensure_ascii=False, indent=4)
+            # logger.info(f"Cached dataset in condition of {current_config}")
         
         logger.info("训练集数据：{}条 验证集数据：{}条".format(len(train_dataset), len(dev_dataset)))
 
@@ -868,20 +870,38 @@ class FCGEC_SEQ2SEQ:
             operates = unpack(operate)
             return get_postsentence(sentence, operates)
         
-        multiple_label_num = 0
-        for datk in tqdm(dataset.keys(), desc='Processing {} data'.format(desc)):
-            outs = []
-            if uuid: outs.append(datk)
-            outs.append(dataset[datk]['sentence'])
-            if out_flag: outs.append(dataset[datk]['error_flag'])
-            if out_type: outs.append(dataset[datk]['error_type'])
-            filter_operate = operate_filter(dataset[datk]['sentence'], json.loads(dataset[datk]['operation']))
-            post_sentences = convert_operator2seq(dataset[datk]['sentence'], filter_operate) if dataset[datk]['error_flag'] == 1 else [dataset[datk]['sentence']]
-            if len(post_sentences) != 1:
-                multiple_label_num += 1
-            outs.append(post_sentences[0])
-            out_data.append(outs)
-        print(f"{multiple_label_num} samples has multiple labels in one edit label.")
+        mul_labels2mul_samples = True
+        if desc != 'Train':
+            mul_labels2mul_samples = False
+        
+        if mul_labels2mul_samples:
+            print("In processing, the sample with multiple labels will be split to multiple samples.")
+            for datk in tqdm(dataset.keys(), desc='Processing {} data'.format(desc)):
+                outs = []
+                if uuid: outs.append(datk)
+                outs.append(dataset[datk]['sentence'])
+                if out_flag: outs.append(dataset[datk]['error_flag'])
+                if out_type: outs.append(dataset[datk]['error_type'])
+                post_sentences = convert_operator2seq(dataset[datk]['sentence'], json.loads(dataset[datk]['operation'])) if dataset[datk]['error_flag'] == 1 else [dataset[datk]['sentence']]
+                outs.append('\t'.join(post_sentences))
+                out_data.append(outs)
+        else:
+            multiple_label_num = 0
+            print("In processing, the sample with multiple labels will choose first label as the only target text.")
+            for datk in tqdm(dataset.keys(), desc='Processing {} data'.format(desc)):
+                outs = []
+                if uuid: outs.append(datk)
+                outs.append(dataset[datk]['sentence'])
+                if out_flag: outs.append(dataset[datk]['error_flag'])
+                if out_type: outs.append(dataset[datk]['error_type'])
+                filter_operate = operate_filter(dataset[datk]['sentence'], json.loads(dataset[datk]['operation']))
+                post_sentences = convert_operator2seq(dataset[datk]['sentence'], filter_operate) if dataset[datk]['error_flag'] == 1 else [dataset[datk]['sentence']]
+                if len(post_sentences) != 1:
+                    multiple_label_num += 1
+                outs.append(post_sentences[0])
+                out_data.append(outs)
+            print(f"{multiple_label_num} samples has multiple labels in one edit label.")
+
 
         columns = []
         if uuid: columns.append('UUID')
@@ -906,7 +926,17 @@ class FCGEC_SEQ2SEQ:
             for key in key_transformation:
                 if key in columns:
                     json_item[key_transformation[key]] = item[key]
-            json_data.append(json_item)
+            
+            # multiple label added
+            # TODO: 怎么在一个样本上添加多重标签。。
+            if mul_labels2mul_samples:
+                labels = json_item['label'].split('\t')
+                for label in labels:
+                    json_item['label'] = label
+                    json_data.append(json_item)
+                    json_item = dict(json_item)
+            else:
+                json_data.append(json_item)
 
         with open(out_path, 'w') as f:
             json.dump(json_data, f, ensure_ascii=False, indent=4)

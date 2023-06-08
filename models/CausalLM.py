@@ -1,6 +1,7 @@
 import torch
 from peft import  PeftModel
 from transformers import LlamaForCausalLM, LlamaTokenizer
+from transformers import AutoTokenizer, AutoModel
 from transformers import StoppingCriteria, StoppingCriteriaList
 
 class StoppingCriteriaSub(StoppingCriteria):
@@ -20,6 +21,51 @@ class StoppingCriteriaSub(StoppingCriteria):
         return False
 
 class CausalLM(torch.nn.Module):
+    def __init__(self, args, config) -> None:
+        super(CausalLM, self).__init__()
+        self.args = args
+        self.config = config
+        self.tokenizer = AutoTokenizer.from_pretrained(config.pretrained_model, trust_remote_code=True)
+        self.language_model = AutoModel.from_pretrained(config.pretrained_model, trust_remote_code=True).half()
+        self.language_model.to(args.device)
+
+        ## Generation Config
+        stop_words = ['\n']
+        stop_words_ids = [self.tokenizer(stop_word, return_tensors='pt')['input_ids'].squeeze()[-1].item() for stop_word in stop_words]
+        self.stopping_criteria = StoppingCriteriaList([StoppingCriteriaSub(stops=stop_words_ids, encounters=3)])
+        self.generation_config = dict(
+            temperature=0.2,
+            top_k=40,
+            top_p=0.9,
+            do_sample=True,
+            num_beams=1,
+            repetition_penalty=1.3,
+            max_new_tokens=512,
+            stopping_criteria=self.stopping_criteria,
+        )
+
+
+    def forward(self, **kwargs):
+        return self.language_model(**kwargs)
+    
+    def generate(self, input_texts):
+        self.language_model.eval()
+        outputs = []
+        for text in input_texts:
+            inputs = self.tokenizer(text, return_tensors="pt", padding=True)  #add_special_tokens=False ?
+            generation_output = self.language_model.generate(
+                input_ids = inputs["input_ids"].to(self.args.device), 
+                attention_mask = inputs['attention_mask'].to(self.args.device),
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.pad_token_id,
+                **self.generation_config
+            )
+            s = generation_output[0]
+            output = self.tokenizer.decode(s, skip_special_tokens=True)
+            outputs.append(output)
+        return outputs
+
+class CausalLMLLAMA(torch.nn.Module):
     def __init__(self, args, config) -> None:
         super(CausalLM, self).__init__()
         self.args = args

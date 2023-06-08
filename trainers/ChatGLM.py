@@ -281,8 +281,8 @@ class ChatGLMTrainer(Trainer2):
         self.config = config
         assert model == None
 
-        self.args_list = [
-            "--do_train",
+        self.args_list = ['--do_train'] if self.args.task_mode == 'train' else []
+        self.args_list += [
             "--train_file", os.path.join(config.data_dir, "train.json"),
             "--validation_file", os.path.join(config.data_dir, "valid.json"),
             "--test_file", os.path.join(config.data_dir, "test.json"),
@@ -343,12 +343,17 @@ class ChatGLMTrainer(Trainer2):
         validation_file = os.path.join(config.data_dir, 'valid.json')
         test_file = os.path.join(config.data_dir, 'test.json')
 
+        self.raw_train_dataset = []
+        self.raw_eval_dataset = []
+        self.raw_test_dataset = []
+
         with open(train_file) as f:
             raw_datasets['train'] = Dataset.from_list(json.load(f))
         with open(validation_file) as f:
             raw_datasets['validation'] = Dataset.from_list(json.load(f))
         with open(test_file) as f:
-            raw_datasets["test"] = Dataset.from_list(json.load(f))
+            self.raw_test_dataset = json.load(f)
+            raw_datasets["test"] = Dataset.from_list(self.raw_test_dataset)
 
         # Load pretrained model and tokenizer
         config = AutoConfig.from_pretrained(model_args.model_name_or_path, trust_remote_code=True)
@@ -362,6 +367,7 @@ class ChatGLMTrainer(Trainer2):
             # Loading extra state dict of prefix encoder
             model = AutoModel.from_pretrained(model_args.model_name_or_path, config=config, trust_remote_code=True)
             prefix_state_dict = torch.load(os.path.join(args.load, "pytorch_model.bin"))
+            logger.info(f'Successfully load checkpoint from {args.load}')
             new_prefix_state_dict = {}
             for k, v in prefix_state_dict.items():
                 if k.startswith("transformer.prefix_encoder."):
@@ -388,8 +394,6 @@ class ChatGLMTrainer(Trainer2):
         train_column_names = raw_datasets["train"].column_names
         valid_column_names = raw_datasets["validation"].column_names
         test_column_names = raw_datasets["test"].column_names
-
-
         # Get the column names for input/target.
         prompt_column = data_args.prompt_column
         response_column = data_args.response_column
@@ -479,6 +483,7 @@ class ChatGLMTrainer(Trainer2):
             print("label_ids", example["labels"])
             print("labels", tokenizer.decode(example["labels"]))
 
+        train_dataset, eval_dataset, predict_dataset = [], [], []
         if training_args.do_train:
             if "train" not in raw_datasets:
                 raise ValueError("--do_train requires a train dataset")
@@ -497,59 +502,50 @@ class ChatGLMTrainer(Trainer2):
                 )
             print_dataset_example(train_dataset[0])
 
-        # eval dataset
-        max_target_length = data_args.val_max_target_length
-        if "validation" not in raw_datasets:
-            raise ValueError("--do_eval requires a validation dataset")
-        eval_dataset = raw_datasets["validation"]
-        if data_args.max_eval_samples is not None:
-            max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
-            eval_dataset = eval_dataset.select(range(max_eval_samples))
-        with training_args.main_process_first(desc="validation dataset map pre-processing"):
-            eval_dataset = eval_dataset.map(
-                preprocess_function_eval,
-                batched=True,
-                num_proc=data_args.preprocessing_num_workers,
-                remove_columns=valid_column_names,
-                load_from_cache_file=not data_args.overwrite_cache,
-                desc="Running tokenizer on validation dataset",
-            )
-        print_dataset_example(eval_dataset[0])
-
-        # predict dataset
-        max_target_length = data_args.val_max_target_length
-        if "test" not in raw_datasets:
-            raise ValueError("--do_predict requires a test dataset")
-        predict_dataset = raw_datasets["test"]
-        if data_args.max_predict_samples is not None:
-            max_predict_samples = min(len(predict_dataset), data_args.max_predict_samples)
-            predict_dataset = predict_dataset.select(range(max_predict_samples))
-        with training_args.main_process_first(desc="prediction dataset map pre-processing"):
-            predict_dataset = predict_dataset.map(
-                preprocess_function_eval,
-                batched=True,
-                num_proc=data_args.preprocessing_num_workers,
-                remove_columns=test_column_names,
-                load_from_cache_file=not data_args.overwrite_cache,
-                desc="Running tokenizer on prediction dataset",
-            )
-        print_dataset_example(predict_dataset[0])
+            # eval dataset
+            max_target_length = data_args.val_max_target_length
+            if "validation" not in raw_datasets:
+                raise ValueError("--do_eval requires a validation dataset")
+            eval_dataset = raw_datasets["validation"]
+            if data_args.max_eval_samples is not None:
+                max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
+                eval_dataset = eval_dataset.select(range(max_eval_samples))
+            with training_args.main_process_first(desc="validation dataset map pre-processing"):
+                eval_dataset = eval_dataset.map(
+                    preprocess_function_eval,
+                    batched=True,
+                    num_proc=data_args.preprocessing_num_workers,
+                    remove_columns=valid_column_names,
+                    load_from_cache_file=not data_args.overwrite_cache,
+                    desc="Running tokenizer on validation dataset",
+                )
+            print_dataset_example(eval_dataset[0])
         
-        ## save to self.
-        self.model_args, self.data_args, self.training_args = model_args, data_args, training_args
-        self.tokenizer = tokenizer
-        self.model = model
-        self.train_dataset = train_dataset
-        self.eval_dataset = eval_dataset
-        self.predict_dataset = predict_dataset
+        else:
+            # predict dataset
+            max_target_length = data_args.val_max_target_length
+            if "test" not in raw_datasets:
+                raise ValueError("--do_predict requires a test dataset")
+            predict_dataset = raw_datasets["test"]
+            if data_args.max_predict_samples is not None:
+                max_predict_samples = min(len(predict_dataset), data_args.max_predict_samples)
+                predict_dataset = predict_dataset.select(range(max_predict_samples))
+            with training_args.main_process_first(desc="prediction dataset map pre-processing"):
+                predict_dataset = predict_dataset.map(
+                    preprocess_function_eval,
+                    batched=True,
+                    num_proc=data_args.preprocessing_num_workers,
+                    remove_columns=test_column_names,
+                    load_from_cache_file=not data_args.overwrite_cache,
+                    desc="Running tokenizer on prediction dataset",
+                )
+            print_dataset_example(predict_dataset[0])
 
-    
-    def do_train(self, train_dataset, val_dataset):
         # Data collator
-        label_pad_token_id = -100 if self.data_args.ignore_pad_token_for_loss else self.tokenizer.pad_token_id
+        label_pad_token_id = -100 if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id
         data_collator = DataCollatorForSeq2Seq(
-            self.tokenizer,
-            model=self.model,
+            tokenizer,
+            model=model,
             label_pad_token_id=label_pad_token_id,
             pad_to_multiple_of=None,
             padding=False
@@ -560,11 +556,11 @@ class ChatGLMTrainer(Trainer2):
             preds, labels = eval_preds
             if isinstance(preds, tuple):
                 preds = preds[0]
-            decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
-            if self.data_args.ignore_pad_token_for_loss:
+            decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+            if data_args.ignore_pad_token_for_loss:
                 # Replace -100 in the labels as we can't decode them.
-                labels = np.where(labels != -100, labels, self.tokenizer.pad_token_id)
-            decoded_labels = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
+                labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+            decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
             score_dict = {
                 "rouge-1": [],
@@ -589,26 +585,38 @@ class ChatGLMTrainer(Trainer2):
             return score_dict
 
         # Override the decoding parameters of Seq2SeqTrainer
-        self.training_args.generation_max_length = (
-            self.training_args.generation_max_length
-            if self.training_args.generation_max_length is not None
-            else self.data_args.val_max_target_length
+        training_args.generation_max_length = (
+            training_args.generation_max_length
+            if training_args.generation_max_length is not None
+            else data_args.val_max_target_length
         )
-        self.training_args.generation_num_beams = (
-            self.data_args.num_beams if self.data_args.num_beams is not None else self.training_args.generation_num_beams
-        )
-        # Initialize our Trainer
-        self.trainer = Seq2SeqTrainer(
-            model=self.model,
-            args=self.training_args,
-            train_dataset=self.train_dataset if self.training_args.do_train else None,
-            eval_dataset=self.eval_dataset if self.training_args.do_eval else None,
-            tokenizer=self.tokenizer,
-            data_collator=data_collator,
-            compute_metrics=compute_metrics if self.training_args.predict_with_generate else None,
-            save_prefixencoder=self.model_args.pre_seq_len is not None
+        training_args.generation_num_beams = (
+            data_args.num_beams if data_args.num_beams is not None else training_args.generation_num_beams
         )
 
+        # Trainer
+        # Initialize our Trainer
+        self.trainer = Seq2SeqTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset if training_args.do_train else None,
+            eval_dataset=eval_dataset if training_args.do_eval else None,
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+            compute_metrics=compute_metrics if training_args.predict_with_generate else None,
+            save_prefixencoder=model_args.pre_seq_len is not None
+        )
+        
+        ## save to self.
+        self.model_args, self.data_args, self.training_args = model_args, data_args, training_args
+        self.tokenizer = tokenizer
+        self.model = model
+        self.train_dataset = train_dataset
+        self.eval_dataset = eval_dataset
+        self.predict_dataset = predict_dataset
+
+    
+    def do_train(self, train_dataset, val_dataset):
         # Training
         if self.training_args.do_train:
             checkpoint = None
@@ -623,7 +631,7 @@ class ChatGLMTrainer(Trainer2):
 
             metrics = train_result.metrics
             max_train_samples = (
-                self.data_args.max_train_samples if self.data_args.max_train_samples is not None else len(train_dataset)
+                self.data_args.max_train_samples if self.data_args.max_train_samples is not None else len(self.train_dataset)
             )
             metrics["train_samples"] = min(max_train_samples, len(self.train_dataset))
 
@@ -679,11 +687,18 @@ class ChatGLMTrainer(Trainer2):
                 )
                 labels = [label.strip() for label in labels]
                 for p, l in zip(predictions, labels):
-                    results.append({"tgt": l, "predict": p})
+                    results.append({"predict": p})
+        assert len(results) == len(self.raw_test_dataset)
+        for i in range(len(results)):
+            results[i]['src'] = self.raw_test_dataset[i]['text']
+            results[i]['tgt'] = self.raw_test_dataset[i]['label']
+            results[i]['id'] = self.raw_test_dataset[i]['id']
+        
         return results
 
     def save(self, save_dir):
         raise NotImplementedError()
 
     def load(self, save_dir):
-        raise NotImplementedError()
+        logger.info("If it is infer or test task, The checkpoint has been loaded in initialization.")
+        return None

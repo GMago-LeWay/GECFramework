@@ -15,6 +15,16 @@ class CausalLMTrain(Trainer):
 
         logger.info("You have loaded CausalLM Trainer for LLM, but it can only do infer task.")
 
+        self.marker_map = {
+            ',': '，',
+            ';': '；',
+            ':': '：',
+            '(': '（',
+            ')': '）',
+            '?': '？',
+            '!': '！',
+        }
+
     def do_train(self, train_dataloader, val_dataloader):
         raise NotImplementedError()
 
@@ -44,7 +54,7 @@ class CausalLMTrain(Trainer):
             final_prompt = '改正：'
             for i in range(batch_size):
                 # prompt = f"请进行语法错误的修改：\n原句：{texts[i]}\n{final_prompt}"
-                prompt = f"请进行语法错误的修改，如果原句没有错误，直接输出原句：\n原句：{texts[i]}\n{final_prompt}"
+                prompt = f"请直接改正原句中的语法错误，如果原句没有错误，直接输出原句：\n原句：{texts[i]}\n{final_prompt}"
                 if len(prompt) > 512:
                     generations[i] = f"[过长]{final_prompt}{texts[i]}"
                 else:
@@ -53,6 +63,13 @@ class CausalLMTrain(Trainer):
 
             ## generate
             model_generations = self.model.generate(prompts)
+            if self.config.chinese_marker_substitution:
+                for i in range(len(model_generations)):
+                    model_generations[i] = list(model_generations[i])
+                    for j in range(len(model_generations[i])):
+                        if model_generations[i][j] in self.marker_map:
+                            model_generations[i][j] = self.marker_map[model_generations[i][j]]
+                    model_generations[i] = ''.join(model_generations[i])
 
             for i in range(len(model_generations)):
                 generations[normal_text_idx[i]] = model_generations[i]
@@ -65,7 +82,7 @@ class CausalLMTrain(Trainer):
                 predict = predict.strip()
 
                 ## if the corrections...
-                if len(predict) > len(texts[i]) * 1.2:
+                if len(predict) > len(texts[i]) * 1.3:
                     predict = predict[:len(texts[i])]
                 if len(predict) < len(texts[i]) * 0.6:
                     predict = str(texts[i])

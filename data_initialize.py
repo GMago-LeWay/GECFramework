@@ -1,5 +1,12 @@
 from data import *
 
+def setup_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+
 def filter_stg_joint(data_list, limit_num):
 
     model_config = Config(model='stgjoint', dataset='fangzhengdapei').get_config()
@@ -137,8 +144,9 @@ def split_data(dataset):
     data.train_val_test_data()
 
 if __name__ == "__main__":
+    setup_seed(111)
     # preprocess_stgjoint('mucgec')
     # preprocess_seq2edit('augment')
     # convert_fcgec_seq2seq()
-    # process_gector_multi_append_data('pretrain')
-    split_data('augment')
+    process_gector_multi_append_data('fcgec')
+    # split_data('augment')

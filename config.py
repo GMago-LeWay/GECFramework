@@ -37,7 +37,7 @@ DATA_DIR_NAME = {
     'fangzhengspell': "FangZhengSpell",
     'guangming': "Corpus/GuangMing",
     'peopledaily': "Corpus/PeopleDaily",
-    'augment': "clg-augment",
+    'augment': "augment3",
     'fangzhengaugment': "FangZhengAugment",
     'fangzhengdapei': "FangZhengDapei",
     'pretrain': "PreTrainSetLarge",
@@ -68,6 +68,7 @@ class Config:
             'seq2seq': self.__Seq2Seq,
             'seq2edit': self.__Seq2Edit,
             'gector': self.__GECToR,
+            'chinese_llama': self.__ChineseLLaMA,
             'llm': self.__LLM,
             'llama': self.__LLAMA,
             'llama_quant': self.__LLAMA_QUANT,
@@ -449,6 +450,31 @@ class Config:
 
             # pretrained model
             'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chatglm-6b'),
+            'lora_model': None,
+            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
+
+            # fixed parameters
+
+            # parameters that are able to be tuned
+
+
+            # evaluation config
+            'chinese_marker_substitution': True,
+
+        }
+
+        return NotImplementedError() if tune else Config
+
+
+    def __ChineseLLaMA(self, tune):
+
+        Config = {
+            # identifier
+            'name': 'chinese_llama',
+
+            # pretrained model
+            'language_model': True,
             'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chinese-llama/alpaca-combined'),
             'lora_model': None,
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
@@ -492,7 +518,7 @@ class Config:
 
         Config = {
             # identifier
-            'name': 'llama',
+            'name': 'llama_quant',
 
             # pretrained model
             'language_model': True,
@@ -594,19 +620,26 @@ class Config:
             'ctc_vocab_dir': os.path.join(MODEL_ROOT_DIR, 'GECToR', 'ctc_vocab'),
             'detect_tags_file': "ctc_detect_tags.txt",
             'correct_tags_file': "ctc_correct_tags.txt", # ctc_correct_tags.txt, ctc_correct_cail2022_tags.txt, mucgec_correct_tags.txt
+            'infer_tags': None,
             'detect_vocab_size': 2,
             'correct_vocab_size': None,        # lazy init
 
+            # RL
+            'reward_estimate': False,
+            'reward_metric': 'token_level:f0.5',
+            'reward_loss_weight': 5,
+
             # training setting
             'warmup_proportion': 0.02,
-            'learning_rate': 2e-5,     # 3e-5
+            'learning_rate': 3e-5,     # 2e-5/32 3e-5/48
             'adam_epsilon': 1e-8,
             'use_tensorboard': False,
             'epochs': 10,
             'max_grad_norm': 1.0,
 
             # infer setting
-            'iteration': 5,
+            'fixed_length': True,
+            'iteration': 3,
         }
 
         return NotImplementedError() if tune else Config
@@ -614,8 +647,8 @@ class Config:
     def __GECToR_Data(self):
         dataConfig = {
             'use_multi_append': True,      # use data where multi-append situation are split into multiple sentences.
-            'text_cut': 512,
-            'batch_size': 32,
+            'text_cut': 200,
+            'batch_size': 48,
             'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch   
         }
 

@@ -3,6 +3,7 @@ import os
 import logging
 
 import torch
+from torch.nn import MSELoss
 import numpy as np
 from torch.cuda.random import device_count
 from tqdm import tqdm
@@ -10,6 +11,9 @@ from torch.utils.data import DataLoader
 from transformers import get_linear_schedule_with_warmup
 from torch.optim import AdamW
 from tensorboardX import SummaryWriter
+import platform
+
+plat = platform.system().lower()
 
 from metrics import GECMetric
 
@@ -76,26 +80,56 @@ class GECToRTrainer(Trainer):
         self._keep_id_in_ctag = _keep_id_in_ctag
 
         # get vocab information
+        try:
+            self._start_vocab_id = self.model.tokenizer.vocab['[START]']
+        except KeyError:
+            self._start_vocab_id = self.model.tokenizer.vocab['[unused1]']
         with open(os.path.join(config.ctc_vocab_dir, config.correct_tags_file), "r") as fp:
             vocab_szie = len(fp.read().strip().split("\n"))
         config.correct_vocab_size = vocab_szie
         logger.info(f"Correct Tag Num: {vocab_szie}")
 
-        # get dataset config (by initialize an empty dataset)
-        empty_dataset = DatasetCTC(in_model_dir=self.args.pretrained_model,
-                            src_texts=[],
-                            trg_texts=[],
-                            max_seq_len=self.args.text_cut,
-                            ctc_label_vocab_dir=self.args.ctc_vocab_dir,
-                            correct_tags_file=self.args.correct_tags_file,
-                            detect_tags_file=self.args.detect_tags_file,
-                            _loss_ignore_id=-100)
-        self.id2label = empty_dataset.id2ctag
+        self.id2dtag, self.d_tag2id, self.id2ctag, self.c_tag2id = self.load_label_dict(
+            config.ctc_vocab_dir, config.detect_tags_file, config.correct_tags_file)
+        self.id2label = self.id2ctag
+
+        self.infer_prune = False
+        self.index_prune = []
+        self.id2label_prune = []
+        if config.infer_tags != None and config.infer_tags != config.correct_tags_file:
+            self.infer_prune = True
+            id2dtag, d_tag2id, id2ctag, c_tag2id = self.load_label_dict(
+                config.ctc_vocab_dir, config.detect_tags_file, config.infer_tags)
+            print(f"Correct Tags pruning while inferring. Raw tags num: {len(self.id2ctag)}, Target tags num: {len(id2ctag)}")
+            for tag in id2ctag:
+                if tag in self.c_tag2id:
+                    self.index_prune.append(self.c_tag2id[tag])
+                    self.id2label_prune.append(tag)
+            print(f"After Pruning, Tags num {len(self.index_prune)}")
+
+
+    def load_label_dict(self, ctc_label_vocab_dir: str, detect_tags_file: str, correct_tags_file: str):
+        dtag_fp = os.path.join(ctc_label_vocab_dir, detect_tags_file)
+        ctag_fp = os.path.join(ctc_label_vocab_dir, correct_tags_file)
+
+        if plat == "windows":
+            dtag_fp = dtag_fp.replace("\\", "/")
+            ctag_fp = ctag_fp.replace("\\", "/")
+        id2dtag = [line.strip() for line in open(dtag_fp, encoding='utf8')]
+        d_tag2id = {v: i for i, v in enumerate(id2dtag)}
+
+        id2ctag = [line.strip() for line in open(ctag_fp, encoding='utf8')]
+        c_tag2id = {v: i for i, v in enumerate(id2ctag)}
+        logger.info('d_tag num: {}, d_tags:{}'.format(len(id2dtag), d_tag2id))
+        return id2dtag, d_tag2id, id2ctag, c_tag2id
+    
 
     def do_train(self, train_dataloader, val_dataloader):
         self.t_total = len(train_dataloader) * self.epochs
         # self.optimizer = torch.optim.Adam(self.model.parameters(), lr=args.getfloat("train", "learning_rate"))
         self.optimizer, self.scheduler = build_optimizer_and_scheduler(self.args, self.model, self.t_total)
+        # RL initialize
+        reward_loss = MSELoss()
         # Train
         global_step = 1
         best_d_f1 = 0.
@@ -106,9 +140,12 @@ class GECToRTrainer(Trainer):
             for step, batch_data in enumerate(tqdm(train_dataloader)):
                 self.model.train()
                 for k, v in batch_data.items():
+                    if type(v) == list:
+                        continue
                     batch_data[k] = v.to(self.device)
                 detect_labels = batch_data["d_tags"]
                 correct_labels = batch_data["c_tags"]
+                batch_size = len(batch_data)
                 # 训练过程可能有些许数据出错，跳过
                 try:
                     output = self.model(batch_data["input_ids"],
@@ -124,6 +161,14 @@ class GECToRTrainer(Trainer):
                 batch_loss = batch_loss.mean()
                 batch_detect_loss = output["detect_loss"]
                 batch_correct_loss = output["correct_loss"]
+                ## RL
+                if self.args.reward_estimate:
+                    scores = self._get_output_text_score(output=output, batch_texts=batch_data['raw_texts'], batch_labels=batch_data['raw_labels'])['score']
+                    reward = [score[self.args.reward_metric] for score in scores]
+                    reward = torch.tensor(reward).to(self.global_args.device)
+                    batch_reward_loss = reward_loss(output["reward_outputs"].view(-1), reward)
+                    batch_loss += (self.args.reward_loss_weight * batch_reward_loss)
+
                 batch_loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.max_grad_norm)
                 self.optimizer.step()
@@ -190,6 +235,42 @@ class GECToRTrainer(Trainer):
         torch.save(model_to_save.state_dict(),
                     os.path.join(output_dir, '{}_model_final.pt'.format(self.args.name)))
         return best_c_f1
+    
+    def _get_output_text_score(self, output, batch_texts, batch_labels):
+        results = []
+        for idx, raw_text in enumerate(batch_texts):
+            text = [i for i in "始"+raw_text]
+            real_length = 1 + len(text)
+            correct_outputs = output["correct_outputs"][idx]
+            correct_outputs = correct_outputs.detach().cpu().numpy()
+            detect_outputs = output["detect_outputs"][idx]
+            detect_outputs = detect_outputs.detach().cpu().numpy()
+            detect_outputs = np.argmax(detect_outputs, axis=-1).squeeze()[1:real_length]
+            correct_outputs = np.argmax(correct_outputs, axis=-1).squeeze()[1:real_length]
+            pre_text = []
+            for d, c, t in zip(detect_outputs, correct_outputs, text):
+                if self.infer_prune:
+                    clabel = self.id2label_prune[c]
+                else:
+                    clabel = self.id2label[c]
+                if "$APPEND" in clabel:
+                    pre_text.append(t)
+                    insert = clabel.split("_")[-1]
+                    pre_text.append(insert)
+                elif "$DELETE" in clabel:
+                    continue
+                elif "$REPLACE" in clabel:
+                    replace = clabel.split("_")[-1]
+                    pre_text.append(replace)
+                else:
+                    pre_text.append(t)
+            results.append("".join(pre_text)[1:])
+
+        scores = []
+        for i in range(len(batch_texts)):
+            scores.append(GECMetric.final_f1_score(src_texts=[batch_texts[i]], trg_texts=[batch_labels[i]], pred_texts=[results[i]]))
+        return {'predicion': results, 'score': scores}
+
 
     def do_test(self, dataloader, mode="VAL"):
         """
@@ -203,6 +284,8 @@ class GECToRTrainer(Trainer):
         with torch.no_grad():
             for i, batch_data in enumerate(dataloader):
                 for k, v in batch_data.items():
+                    if type(v) == list:
+                        continue
                     batch_data[k] = v.to(self.device)
                 detect_labels = batch_data["d_tags"]
                 correct_labels = batch_data["c_tags"]
@@ -250,34 +333,55 @@ class GECToRTrainer(Trainer):
         return json results.
         """
         self.model.eval()
-        if mode == 'INFER':
-            result = []
-            with torch.no_grad():
-                for batch in tqdm(dataloader):
-                    batch_size = len(batch['ids'])
+        result = []
+        with torch.no_grad():
+            for batch in tqdm(dataloader):
+                batch_size = len(batch['ids'])
+                if mode == 'INFER':
                     batch_results = [{"id": batch['ids'][i], "src": batch['raw_texts'][i]} for i in range(batch_size)]
-                    current_inputs = list(batch['raw_texts'])
-                    for _ in range(self.args.iteration):
-                        for idx, raw_text in enumerate(current_inputs):
-                            inputs = self.model.tokenizer(raw_text, return_batch=True)
-                            text = [i for i in raw_text]
-                            real_length = 1 + len(raw_text)
-                            input_ids = torch.LongTensor(inputs["input_ids"]).to(self.device)
-                            real_lenth = input_ids
-                            attention_mask = torch.LongTensor(inputs["attention_mask"]).to(self.device)
-                            token_type_ids = torch.LongTensor(inputs["token_type_ids"]).to(self.device)
-                            output = self.model(input_ids, attention_mask, token_type_ids)
-                            correct_outputs = output["correct_outputs"]
-                            correct_outputs = correct_outputs.detach().cpu().numpy()
-                            detect_outputs = output["detect_outputs"]
-                            detect_outputs = detect_outputs.detach().cpu().numpy()
-                            detect_outputs = np.argmax(detect_outputs, axis=-1).squeeze()[:real_length]
-                            correct_outputs = np.argmax(correct_outputs, axis=-1).squeeze()[:real_length]
-                            # print(detect_outputs)
-                            # print(correct_outputs)
-                            pre_text = []
-                            for d, c, t in zip(detect_outputs, correct_outputs, ["始"] + text):
+                elif mode == 'TEST':
+                    batch_results = [{"id": batch['ids'][i], "src": batch['raw_texts'][i], "tgt": batch['raw_labels'][i]} for i in range(batch_size)]
+                else:
+                    raise NotImplementedError()
+                current_inputs = list(batch['raw_texts'])
+                for _ in range(self.args.iteration):
+                    for idx, raw_text in enumerate(current_inputs):
+                        raw_text = '始' + raw_text
+                        if len(raw_text) > 500:
+                            batch_results[idx]["predict"] = raw_text[1:]
+                            continue
+                        inputs = self.model.tokenizer(raw_text, return_batch=True)
+                        inputs['input_ids'][0][1] = self._start_vocab_id
+                        text = [i for i in raw_text]
+                        real_length = 1 + len(raw_text)
+                        input_ids = torch.LongTensor(inputs["input_ids"]).to(self.device)
+                        real_lenth = input_ids
+                        attention_mask = torch.LongTensor(inputs["attention_mask"]).to(self.device)
+                        token_type_ids = torch.LongTensor(inputs["token_type_ids"]).to(self.device)
+                        output = self.model(input_ids, attention_mask, token_type_ids)
+                        correct_outputs = output["correct_outputs"]
+                        if self.infer_prune:
+                            correct_outputs = torch.index_select(correct_outputs, dim=-1, index=torch.tensor(self.index_prune, dtype=int).to(self.device))
+                        correct_outputs = correct_outputs.detach().cpu().numpy()
+                        detect_outputs = output["detect_outputs"]
+                        detect_outputs = detect_outputs.detach().cpu().numpy()
+                        detect_outputs = np.argmax(detect_outputs, axis=-1).squeeze()[1:real_length]
+                        correct_outputs = np.argmax(correct_outputs, axis=-1).squeeze()[1:real_length]
+                        # print(detect_outputs)
+                        # print(correct_outputs)
+                        pre_text = []
+                        for d, c, t in zip(detect_outputs, correct_outputs, text):
+                            if self.infer_prune:
+                                clabel = self.id2label_prune[c]
+                            else:
                                 clabel = self.id2label[c]
+                            if self.args.fixed_length:
+                                if "$REPLACE" in clabel:
+                                    replace = clabel.split("_")[-1]
+                                    pre_text.append(replace)
+                                else:
+                                    pre_text.append(t)
+                            else:
                                 if "$APPEND" in clabel:
                                     pre_text.append(t)
                                     insert = clabel.split("_")[-1]
@@ -289,17 +393,15 @@ class GECToRTrainer(Trainer):
                                     pre_text.append(replace)
                                 else:
                                     pre_text.append(t)
-                            batch_results[idx]["predict"] = "".join(pre_text)[1:]
-                        ## refresh text with the predicted output and re-correct
-                        current_inputs = [item['predict'] for item in batch_results]
-                    
-                    # iteration ends.
-                    result.extend(batch_results)
-            return result
-        else:
-            raise NotImplementedError()
+                        batch_results[idx]["predict"] = "".join(pre_text)[1:]
+                    ## refresh text with the predicted output and re-correct
+                    current_inputs = [item['predict'] for item in batch_results]
+                
+                # iteration ends.
+                result.extend(batch_results)
+        return result
     
     def load(self, save_dir=None):
         default_path = os.path.join(save_dir, '{}_model.pt'.format(self.args.name))
-        self.model.load_state_dict(torch.load(default_path, map_location='cpu'))
+        self.model.load_state_dict(torch.load(default_path, map_location='cpu'), strict=False)
         logger.info(f"Successfully load weights from {default_path}")

@@ -68,6 +68,9 @@ class ModelingCtcBert(Module):
         self._detect_criterion = CrossEntropyLoss(ignore_index=-100)
         self._correct_criterion = LabelSmoothingLoss(smoothing=0.1, ignore_index=-100)
 
+        self.reward_estimate_projection = torch.nn.Linear(
+            bert_config.hidden_size, 1)
+
     @staticmethod
     def build_dummpy_inputs():
         inputs = {}
@@ -95,9 +98,12 @@ class ModelingCtcBert(Module):
         detect_outputs = self.tag_detect_projection_layer(hidden_states)
         correct_outputs = self.tag_label_projection_layer(hidden_states)
 
+        reward_outputs = self.reward_estimate_projection(hidden_states[:, 0, :])
+
         result = {
             "detect_outputs": detect_outputs,
             "correct_outputs": correct_outputs,
+            "reward_outputs": reward_outputs,
             "detect_loss": None,
             "correct_loss": None,
             "loss": None,

@@ -309,6 +309,12 @@ class GECMetric:
         return round(2 * precision * recall / (precision + recall), 4)
     
     @staticmethod
+    def f_alpha(precision, recall, alpha=0.5):
+        if precision + recall == 0:
+            return 0
+        return round((1+alpha**2) * precision * recall / ((alpha**2)*precision + recall), 4)
+    
+    @staticmethod
     def compute_label_nums(src_text, trg_text, pred_text, log_error_to_fp=None):
         assert len(src_text) == len(trg_text) == len(
             pred_text), 'src_text:{}, trg_text:{}, pred_text:{}'.format(src_text, trg_text, pred_text)
@@ -406,7 +412,9 @@ class GECMetric:
             if src_text != trg_text and pred_text == trg_text:
                 correct_recall_num += 1
 
-        assert correct_ref_num > 0, '文本中未发现错误，无法计算指标，该指标只计算含有错误的样本。'
+        # assert correct_ref_num > 0, '文本中未发现错误，无法计算指标，该指标只计算含有错误的样本。'
+        if correct_ref_num == 0:
+            return 1, 1, 1
 
         correct_precision = 0 if correct_recall_num == 0 else correct_recall_num / correct_pred_num
         correct_recall = 0 if correct_recall_num == 0 else correct_recall_num / correct_ref_num
@@ -424,7 +432,13 @@ class GECMetric:
             for (tag, src_i1, src_i2, trg_i1, trg_i2) in diffs:
 
                 if tag == 'replace':
-                    assert src_i2 - src_i1 == trg_i2 - trg_i1
+                    # assert src_i2 - src_i1 == trg_i2 - trg_i1
+                    if src_i2 - src_i1 != trg_i2 - trg_i1:
+                        # logger.info("Warning: Replace operates unequal segments while computing metric.")
+                        if src_i2 - src_i1 > trg_i2 - trg_i1:
+                            src_i2 = src_i1 + trg_i2 - trg_i1
+                        else:
+                            trg_i2 = trg_i1 + src_i2 - src_i1
                     for count, src_i in enumerate(range(src_i1, src_i2)):
                         trg_token = trg_text[trg_i1 + count]
                         detect_ref_list.append(src_i)
@@ -472,7 +486,9 @@ class GECMetric:
             correct_recall_num += len(set(correct_ref_list)
                                     & set(correct_pred_list))
 
-        assert correct_ref_num > 0, '文本中未发现错误，无法计算指标，该指标只计算含有错误的样本。'
+        if correct_ref_num == 0:
+            # '文本中未发现错误，无法计算指标，该指标只计算含有错误的样本。'
+            return 1, 1, [1, 1, 1], [1, 1, 1]
 
         detect_precision = 0 if detect_pred_num == 0 else detect_recall_num / detect_pred_num
         detect_recall = 0 if detect_ref_num == 0 else detect_recall_num / detect_ref_num
@@ -482,16 +498,17 @@ class GECMetric:
 
         detect_f1 = GECMetric.f1(detect_precision, detect_recall)
         correct_f1 = GECMetric.f1(correct_precision, correct_recall)
+        correct_f0_5 = GECMetric.f_alpha(correct_precision, correct_recall, 0.5)
 
         final_f1 = detect_f1 * 0.8 + correct_f1 * 0.2
 
-        return final_f1, [detect_precision, detect_recall, detect_f1], [correct_precision, correct_recall, correct_f1]
+        return final_f1, correct_f0_5, [detect_precision, detect_recall, detect_f1], [correct_precision, correct_recall, correct_f1]
     
     @staticmethod
     def final_f1_score(src_texts,
                     pred_texts,
                     trg_texts,
-                    log_fp='../logs/f1_score.log'):
+                    log_fp=None):
         """"最终输出结果F1计算，综合了句级F1和字级F1"
         Args:
             src_texts (_type_): 源文本
@@ -502,7 +519,7 @@ class GECMetric:
             _type_: _description_
         """
 
-        token_level_f1, detect_metrics, correct_metrcis = GECMetric.ctc_comp_f1_token_level(
+        token_level_f1, correct_f_0_5, detect_metrics, correct_metrcis = GECMetric.ctc_comp_f1_token_level(
             src_texts, pred_texts, trg_texts)
         sent_level_p, sent_level_r, sent_level_f1 = GECMetric.ctc_comp_f1_sentence_level(
             src_texts, pred_texts, trg_texts)
@@ -512,6 +529,7 @@ class GECMetric:
 
             'token_level:[detect_precision, detect_recall, detect_f1]': detect_metrics,
             'token_level:[correct_precision, correct_recall, correct_f1] ': correct_metrcis,
+            'token_level:f0.5': correct_f_0_5,
             'token_level:f1': token_level_f1,
 
             'sentence_level:[correct_precision, correct_recall]': [sent_level_p, sent_level_r],
@@ -519,10 +537,11 @@ class GECMetric:
 
             'final_f1': final_f1
         }
-        _log_fp = open(log_fp, 'w', encoding='utf-8')
-        json.dump(json_data, _log_fp, indent=4)
-        logger.info('final f1:{}'.format(final_f1))
-        logger.info('f1 logfile saved at:{}'.format(log_fp))
+        if log_fp:
+            _log_fp = open(log_fp, 'w', encoding='utf-8')
+            json.dump(json_data, _log_fp, indent=4)
+        # logger.info('final f1:{}'.format(final_f1))
+        # logger.info('f1 logfile saved at:{}'.format(log_fp))
         return json_data
     
     @staticmethod
@@ -531,11 +550,28 @@ class GECMetric:
         src_texts = ["生体不错。", "我看建设这种机器是很值得的事情，所有的学校已该建设。"]
         pred_texts = ["身体不错。", "我看建设这种机器是很值得的事情，所有的学校以该建设。"]
         trg_texts = ["身体不错。", "我看建设这种机器是很值得的事情，所有的学校应该建设。"]
-        pprint(GECMetric.final_f1_score(src_texts, pred_texts, trg_texts))
+        pprint(GECMetric.final_f1_score(src_texts, pred_texts, trg_texts, None))
+
+
+class CHERRANT:
+    def __init__(self) -> None:
+        pass
+
+    @staticmethod
+    def f1(precision, recall):
+        if precision + recall == 0:
+            return 0
+        return round(2 * precision * recall / (precision + recall), 4)
+    
+    @staticmethod
+    def f_alpha(precision, recall, alpha=0.5):
+        if precision + recall == 0:
+            return 0
+        return round((1+alpha**2) * precision * recall / ((alpha**2)*precision + recall), 4)
 
 
 if __name__ == "__main__":
-    SpellingCheckMetricCPN.compute_prf([['我斯你的石么从', '我是你的什么人', '我是您的石么众']], verbose=True)
-    SpellingCheckMetric.char_C([['我斯你的石么从', '我是你的什么人', '我是您的石么众']], verbose=True)
-    GECMetric.test()
+    # SpellingCheckMetricCPN.compute_prf([['我斯你的石么从', '我是你的什么人', '我是您的石么众']], verbose=True)
+    # SpellingCheckMetric.char_C([['我斯你的石么从', '我是你的什么人', '我是您的石么众']], verbose=True)
+    print(GECMetric.test())
 

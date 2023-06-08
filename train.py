@@ -7,6 +7,7 @@ MODULE_MAP = {
     'seq2seq': ('trainers.Seq2Seq', 'Seq2SeqModelTrainer'),
     'seq2edit': ('trainers.Seq2Edit', 'Seq2EditTrainer'),
     'gector': ('trainers.GECToR', 'GECToRTrainer'),
+    'chinese_llama': ('trainers.CausalLM', 'CausalLMTrain'),
     'llm': ('trainers.CausalLM', 'CausalLMTrain'),
     'llama': ('trainers.Llama', 'LlamaTrainer'),
     'llama_quant': ('trainers.Llama', 'LlamaTrainer'),

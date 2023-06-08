@@ -8,6 +8,7 @@ MODULE_MAP = {
     'seq2edit': ('models.Seq2Edit', 'Seq2EditModel'),
     'gector': ('models.GECToR', 'ModelingCtcBert'),
     'llm': ('models.CausalLM', 'CausalLM'),
+    'chinese_llama': ('models.CausalLM', 'CausalLMLLAMA'),
     'llama': ('models.Llama', 'LlamaNormal7B'),
     'llama_quant': ('models.Llama', 'LlamaQuant'),
     'chatglm': ('models.ChatGLM', 'ChatGLM'),

@@ -700,11 +700,25 @@ class DatasetCTC(Dataset):
 
         for diff in diffs:
             tag, i1, i2, j1, j2 = diff
-            if tag == 'replace' and i2 - i1 == j2 - j1:
-                replace_idx_list += [(i, '$REPLACE_' + trg_text[j])
+            if tag == 'replace':
+                if i2 - i1 == j2 - j1:
+                    replace_idx_list += [(i, '$REPLACE_' + trg_text[j])
                                      for i, j in zip(range(i1, i2), range(j1, j2))]
+                else:
+                    # logger.info("Warning: Replace Unequal Segments.")
+                    if i2 - i1 > j2 - j1:       # replace + delete
+                        replace_idx_list += [(i, '$REPLACE_' + trg_text[j])
+                                        for i, j in zip(range(i1, i1+j2-j1), range(j1, j2))]
+                        for i in range(i1+j2-j1, i2):
+                            delete_idx_list.append(i)
+                    else:           # replace + append
+                        replace_idx_list += [(i, '$REPLACE_' + trg_text[j])
+                                        for i, j in zip(range(i1, i2), range(j1, j1+i2-i1))]  
+                        # append data should be preprocessed, cause there can't be replace and append operation simultaneously.
+                        
             elif tag == 'insert':
                 # if j2 - j1 == 1:
+                # append single char
                 missing_idx_list.append((i1 - 1, '$APPEND_' + trg_text[j1]))
             elif tag == 'delete':
                 # 叠字叠词删除后面的
@@ -726,9 +740,24 @@ class DatasetCTC(Dataset):
 
         for diff in diffs:
             tag, i1, i2, j1, j2 = diff
-            if tag == 'replace' and i2 - i1 == j2 - j1:
-                for i, j in zip(range(i1, i2), range(j1, j2)):
-                    src_text_edit_list[i].append('$REPLACE_' + trg_text[j])
+            if tag == 'replace':
+                if i2 - i1 == j2 - j1:
+                    for i, j in zip(range(i1, i2), range(j1, j2)):
+                        src_text_edit_list[i].append('$REPLACE_' + trg_text[j])
+                else:
+                    # logger.info("Warning: Replace Unequal Segments.")
+                    if i2 - i1 > j2 - j1:       # replace + delete
+                        for i, j in zip(range(i1, i1+j2-j1), range(j1, j2)):
+                            src_text_edit_list[i].append('$REPLACE_' + trg_text[j])
+                        for i in range(i1+j2-j1, i2):
+                            src_text_edit_list[i].append('$DELETE')
+                    else:           # replace + append
+                        for i, j in zip(range(i1, i2), range(j1, j1+i2-i1)):
+                            src_text_edit_list[i].append('$REPLACE_' + trg_text[j])
+                        # append data should be preprocessed
+                        for j in range(j1+i2-i1, j2):
+                            src_text_edit_list[i2-1].append('$APPEND_' + trg_text[j])
+
             elif tag == 'insert':
                 for j in range(j1, j2):
                     src_text_edit_list[i1-1].append('$APPEND_' + trg_text[j])
@@ -745,7 +774,9 @@ class DatasetCTC(Dataset):
             'attention_mask': torch.LongTensor(inputs['attention_mask']),
             'token_type_ids': torch.LongTensor(inputs['token_type_ids']),
             'd_tags': torch.LongTensor(inputs['d_tags']),
-            'c_tags': torch.LongTensor(inputs['c_tags'])
+            'c_tags': torch.LongTensor(inputs['c_tags']),
+            'raw_texts': src,
+            'raw_labels': trg,
         }
         return return_dict
 

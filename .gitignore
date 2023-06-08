@@ -8,6 +8,8 @@ tensorboard/
 *.out
 dataset_provider/old_dataset/**
 test.py
+**/samples/**
+myscripts/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
