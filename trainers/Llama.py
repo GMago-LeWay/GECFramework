@@ -43,7 +43,7 @@ class LlamaTrainer:
                 # prompt = f"请回答输入句子的修正版本，修正所有的语法和拼写错误：\n输入语句：{texts[i]}\n改正语句："
                 # prompt = f"请回答输入句子的修正版本，修正所有的语法和拼写错误，注意不是翻译：\n输入语句：{texts[i]}\n改正语句："
                 # prompt = f"请修正所有的语法和拼写错误：\n原始语句：{texts[i]}\n改正语句："
-                prompt = f"请改正句子中所有的语法和拼写错误：\n原句：{texts[i]}\n改正："
+                prompt = f"请回答输入句子的修正版本，修正所有的语法和拼写错误，注意不是翻译：\n输入语句：{texts[i]}\n改正语句："
                 if len(prompt) > self.config.max_gen_len or len(prompt) > self.config.max_seq_len/2:
                     generations[i] = f"[过长]改正：{texts[i]}"
                 else:
@@ -61,7 +61,7 @@ class LlamaTrainer:
             for i in range(batch_size):
                 # postprocess and save
                 output = generations[i].split('\n')[2]
-                predict = output.split("改正：")[1]
+                predict = output.split("改正语句：")[1]
                 predict = predict.strip()
 
                 if len(predict) > len(texts[i]) * 1.2:

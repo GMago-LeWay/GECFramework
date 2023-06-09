@@ -886,7 +886,8 @@ class FCGEC_SEQ2SEQ:
                 outs.append('\t'.join(post_sentences))
                 out_data.append(outs)
         else:
-            multiple_label_num = 0
+            ## In original STG-Joint model training, a filter method is applied for choosing one edit label for training.
+            ## The purpose for the following code is find the chosen label and all other labels, the former will be marked as 'label', the latter will be marked as 'label2/3/4/5...'
             print("In processing, the sample with multiple labels will choose first label as the only target text.")
             for datk in tqdm(dataset.keys(), desc='Processing {} data'.format(desc)):
                 outs = []
@@ -894,13 +895,25 @@ class FCGEC_SEQ2SEQ:
                 outs.append(dataset[datk]['sentence'])
                 if out_flag: outs.append(dataset[datk]['error_flag'])
                 if out_type: outs.append(dataset[datk]['error_type'])
+                all_post_sentences = convert_operator2seq(dataset[datk]['sentence'], json.loads(dataset[datk]['operation'])) if dataset[datk]['error_flag'] == 1 else [dataset[datk]['sentence']]
                 filter_operate = operate_filter(dataset[datk]['sentence'], json.loads(dataset[datk]['operation']))
-                post_sentences = convert_operator2seq(dataset[datk]['sentence'], filter_operate) if dataset[datk]['error_flag'] == 1 else [dataset[datk]['sentence']]
-                if len(post_sentences) != 1:
-                    multiple_label_num += 1
-                outs.append(post_sentences[0])
+                filtered_post_sentences = convert_operator2seq(dataset[datk]['sentence'], filter_operate) if dataset[datk]['error_flag'] == 1 else [dataset[datk]['sentence']]
+                filtered_label_sentence = filtered_post_sentences[0]
+                reorderd_sentences = []
+                ## the chosen label will be treated as the first label.
+                reorderd_sentences.append(filtered_label_sentence)
+                ## other recoverd label sentence will be treated as label2, label3, ...
+                match_label_num = 0
+                for sentence in all_post_sentences:
+                    if sentence == filtered_label_sentence:
+                        match_label_num += 1
+                    else:
+                        reorderd_sentences.append(sentence)
+                # TODO: validate the effectiveness of this method.
+                assert match_label_num == 1, "There should be 1 sentence matched with the chosen sentence from original STG-Joint method."
+                outs.append('\t'.join(reorderd_sentences))
                 out_data.append(outs)
-            print(f"{multiple_label_num} samples has multiple labels in one edit label.")
+            # print(f"{multiple_label_num} samples has multiple labels in one filtered edit label.")
 
 
         columns = []
@@ -928,7 +941,6 @@ class FCGEC_SEQ2SEQ:
                     json_item[key_transformation[key]] = item[key]
             
             # multiple label added
-            # TODO: 怎么在一个样本上添加多重标签。。
             if mul_labels2mul_samples:
                 labels = json_item['label'].split('\t')
                 for label in labels:
@@ -936,6 +948,10 @@ class FCGEC_SEQ2SEQ:
                     json_data.append(json_item)
                     json_item = dict(json_item)
             else:
+                labels = json_item['label'].split('\t')
+                json_item['label'] = labels[0]
+                for i, label in enumerate(labels[1:]):
+                    json_item[f'label{i+2}'] = label
                 json_data.append(json_item)
 
         with open(out_path, 'w') as f:

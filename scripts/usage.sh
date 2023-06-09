@@ -5,3 +5,4 @@ python main.py --model gector --task_mode train --dataset mucgec --load results/
 # gector inference
 python main.py --model gector --task_mode infer --dataset mucgec --load results/gector-mucgec-train-20230523-0215 --devices 0,1,2,3 --device 1
 
+# run pyllama 30B 4bit model

@@ -143,10 +143,32 @@ def split_data(dataset):
     data: TextLabelDataset = get_data(dataset)(None, config)
     data.train_val_test_data()
 
+def split_test_data_to_new_dataset(dataset_dir='../datasets/FangZhengSpell', new_dataset_dir='../datasets/FangZhengSpellv2', train_proportion=0.5, seed=20):
+    setup_seed(seed=seed)
+    original_data = json.load(open(os.path.join(dataset_dir, 'test.json')))
+    print(f"Using test data from {dataset_dir} (length {len(original_data)})...")
+    train_data, test_data = random_split(original_data, [train_proportion, 1-train_proportion])
+    train_data, test_data = list(train_data), list(test_data)
+    if not os.path.exists(new_dataset_dir):
+        os.makedirs(new_dataset_dir)
+    json.dump(train_data, open(os.path.join(new_dataset_dir, 'train.json'), 'w'), ensure_ascii=False, indent=4)
+    json.dump(train_data, open(os.path.join(new_dataset_dir, 'valid.json'), 'w'), ensure_ascii=False, indent=4)
+    json.dump(test_data, open(os.path.join(new_dataset_dir, 'test.json'), 'w'), ensure_ascii=False, indent=4)
+    description = {"source_dataset": os.path.basename(dataset_dir), "sample_description": f"Sample {train_proportion} source dataset for train.json and valid.json, {1-train_proportion} for test.json."}
+    json.dump(description, open(os.path.join(new_dataset_dir, 'description.json'), 'w'), ensure_ascii=False, indent=4)
+    print(description)
+    print(f"Save to {new_dataset_dir}")
+
+
 if __name__ == "__main__":
-    setup_seed(111)
+    # setup_seed(111)
     # preprocess_stgjoint('mucgec')
     # preprocess_seq2edit('augment')
     # convert_fcgec_seq2seq()
-    process_gector_multi_append_data('fcgec')
+    # process_gector_multi_append_data('fcgec')
     # split_data('augment')
+
+    split_test_data_to_new_dataset('../datasets/FangZhengSpell', '../datasets/FangZhengSpellv2', 1/2)
+    split_test_data_to_new_dataset('../datasets/FangZhengSpell', '../datasets/FangZhengSpellv3', 1/3)
+    split_test_data_to_new_dataset('../datasets/FangZhengGrammar', '../datasets/FangZhengGrammarv2', 1/2)
+    split_test_data_to_new_dataset('../datasets/FangZhengGrammar', '../datasets/FangZhengGrammarv3', 1/3)
