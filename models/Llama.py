@@ -1,3 +1,4 @@
+import logging
 import torch
 from transformers import StoppingCriteria, StoppingCriteriaList
 
@@ -8,6 +9,7 @@ from llama import ModelArgs, Transformer, Tokenizer, LLaMA
 from llama.hf import LLaMATokenizer
 from llama.llama_quant import load_quant
 
+logger = logging.getLogger(__name__)
 
 def load(
     ckpt_dir: str,
@@ -90,13 +92,13 @@ class LlamaQuant:
         self.model.to(args.device)
         self.tokenizer = LLaMATokenizer.from_pretrained(config.pretrained_model)
 
-        self.stopping_criteria = None
+        encounters = 3
+        logger.info(f"Warning: The model will stop output at the {encounters}th \\n. If the prompt changes, please check if you need to adjust this terminate conditions.")
+        stop_words_ids = [self.tokenizer(stop_word, return_tensors='pt')['input_ids'].squeeze()[-1].item() for stop_word in ["\n"]]
+        self.stopping_criteria = StoppingCriteriaList([StoppingCriteriaSub(stops=stop_words_ids, encounters=encounters)])
 
-    def generate(self, texts, stop_words=["\n"]):
-        if self.stopping_criteria == None:
-            stop_words_ids = [self.tokenizer(stop_word, return_tensors='pt')['input_ids'].squeeze()[-1].item() for stop_word in stop_words]
-            self.stopping_criteria = StoppingCriteriaList([StoppingCriteriaSub(stops=stop_words_ids, encounters=3)])
-        
+
+    def generate(self, texts):        
         model_generations = []
         for text in texts:
             input_ids = self.tokenizer.encode(text, return_tensors="pt").to(self.args.device)

@@ -45,13 +45,13 @@ class LlamaTrainer:
                 # prompt = f"请修正所有的语法和拼写错误：\n原始语句：{texts[i]}\n改正语句："
                 prompt = f"请回答输入句子的修正版本，修正所有的语法和拼写错误，注意不是翻译：\n输入语句：{texts[i]}\n改正语句："
                 if len(prompt) > self.config.max_gen_len or len(prompt) > self.config.max_seq_len/2:
-                    generations[i] = f"[过长]改正：{texts[i]}"
+                    generations[i] = "[过长]" + prompt + texts[i]
                 else:
                     prompts.append(prompt)
                     normal_text_idx.append(i)
 
             ## generate
-            model_generations = self.model.generate(prompts, stop_words=["\n"])
+            model_generations = self.model.generate(prompts)
 
             for i in range(len(model_generations)):
                 generations[normal_text_idx[i]] = model_generations[i]
