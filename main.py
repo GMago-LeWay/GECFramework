@@ -29,7 +29,7 @@ def parse_args():
                         help='root path to save results.')
     parser.add_argument('--devices', type=str, default='0,1,2,3',
                         help='GPU Environment.')    
-    parser.add_argument('--device', type=int, default=2,
+    parser.add_argument('--device', type=int, default=0,
                         help='GPU id.')
     parser.add_argument('--load', type=str, default=None,
                         help='model save directory to be loaded in infer task.')

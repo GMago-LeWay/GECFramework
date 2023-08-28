@@ -443,6 +443,8 @@ class Config:
 
 
     def __LLM(self, tune):
+        ## chatglm-6b, Llama2-Chinese-7b-Chat
+        import torch
 
         Config = {
             # identifier
@@ -450,9 +452,22 @@ class Config:
 
             # pretrained model
             'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chatglm-6b'),
-            'lora_model': None,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'Llama2-Chinese-7b-Chat'),
+            'lora_model': '/home/liwei/workspace/Llama2-Chinese/train/sft/llama2_large_set',
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
+
+            # model config
+            'torch_dtype': torch.float16,
+            'load_in_8bit': True,
+            'generation_config': dict(
+                temperature=0.2,
+                top_k=10,
+                top_p=0.95,
+                do_sample=True,
+                num_beams=1,
+                repetition_penalty=1.3,
+                max_new_tokens=512,
+            ),
 
             # fixed parameters
 
@@ -460,7 +475,12 @@ class Config:
 
 
             # evaluation config
-            'chinese_marker_substitution': True,
+            'chinese_marker_substitution': False,
+
+            'prompt': '<s>Human: 请修正以下句子中的语法和拼写错误，给出正确的语句；如果没有错误，请直接输出原语句：\n[text]\n</s><s>',         # [text] for substitution.
+            'final_prompt': 'Assistant：',   # Used for segmentation.
+            'max_len_prop': 1.8,
+            'min_len_prop': 0.6,
 
         }
 
@@ -485,6 +505,12 @@ class Config:
 
 
             # evaluation config
+            'chinese_marker_substitution': False,
+
+            'prompt': '请直接改正原句中的语法错误，如果原句没有错误，直接输出原句：\n原句：[text]\n',         # [text] for substitution.
+            'final_prompt': '改正：',   # Used for segmentation.
+            'max_len_prop': 1.3,
+            'min_len_prop': 0.6,
 
         }
 
@@ -638,7 +664,7 @@ class Config:
             'max_grad_norm': 1.0,
 
             # infer setting
-            'fixed_length': True,
+            'fixed_length': False,
             'iteration': 3,
         }
 
@@ -646,10 +672,10 @@ class Config:
 
     def __GECToR_Data(self):
         dataConfig = {
-            'use_multi_append': True,      # use data where multi-append situation are split into multiple sentences.
-            'text_cut': 200,
+            'use_multi_append': False,      # use data where multi-append situation are split into multiple sentences.
+            'text_cut': 512,
             'batch_size': 48,
-            'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch   
+            'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch   
         }
 
         return dataConfig

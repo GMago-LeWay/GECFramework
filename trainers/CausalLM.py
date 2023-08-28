@@ -51,12 +51,12 @@ class CausalLMTrain(Trainer):
             ## add prompt and filter the long text
             generations = [""] * batch_size
             normal_text_idx = []
-            final_prompt = '改正：'
             for i in range(batch_size):
                 # prompt = f"请进行语法错误的修改：\n原句：{texts[i]}\n{final_prompt}"
-                prompt = f"请直接改正原句中的语法错误，如果原句没有错误，直接输出原句：\n原句：{texts[i]}\n{final_prompt}"
+                # prompt = f"请直接改正原句中的语法错误，如果原句没有错误，直接输出原句：\n原句：{texts[i]}\n{final_prompt}"
+                prompt = self.config.prompt.replace('[text]', texts[i]) + self.config.final_prompt
                 if len(prompt) > 512:
-                    generations[i] = f"[过长]{final_prompt}{texts[i]}"
+                    generations[i] = f"[过长]{self.config.final_prompt}{texts[i]}"
                 else:
                     prompts.append(prompt)
                     normal_text_idx.append(i)
@@ -76,15 +76,16 @@ class CausalLMTrain(Trainer):
             # for result in results:
             #     print("🦙LLaMA:", result.strip())
 
+            # print(generations)
             for i in range(batch_size):
                 # postprocess and save
-                predict = generations[i].split(final_prompt)[1]
+                predict = generations[i].split(self.config.final_prompt)[1]
                 predict = predict.strip()
 
                 ## if the corrections...
-                if len(predict) > len(texts[i]) * 1.3:
+                if len(predict) > len(texts[i]) * self.config.max_len_prop:
                     predict = predict[:len(texts[i])]
-                if len(predict) < len(texts[i]) * 0.6:
+                if len(predict) < len(texts[i]) * self.config.min_len_prop:
                     predict = str(texts[i])
 
                 if mode=="TEST":

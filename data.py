@@ -150,7 +150,10 @@ class TextLabelDataset:
         # for item in gross_data:
         #     if len(item['text']) < 80 and len(item['label']) < 80:
         #         data.append(item)
-        # data = random.sample(data, 10000)
+        ## TODO: ... sample
+        random.seed(20)
+        data = random.sample(data, 5000)
+
         labeled = 'label' in data[0]
         return DataLoader(data, batch_size=self.config.batch_size, collate_fn=self.get_collate_fn(tokenizer=tokenizer, labeled=labeled), drop_last=False)
 
@@ -398,6 +401,8 @@ class MuCGECSeq2SeqDataset:  ## MuCGEC
         for item in valid_data:
             segments = item.split()
             item_id, src, tgt = eval(segments[0].strip()), segments[1].strip(), segments[2].strip()
+            if tgt == "没有错误":
+                tgt = str(src)
             valid_data_item = {"id": item_id, "text": src, "label": tgt}
             for i in range(3, len(segments)):
                 # TODO: 这种多标签方式好吗。。
