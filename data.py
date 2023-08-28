@@ -151,8 +151,8 @@ class TextLabelDataset:
         #     if len(item['text']) < 80 and len(item['label']) < 80:
         #         data.append(item)
         ## TODO: ... sample
-        random.seed(20)
-        data = random.sample(data, 5000)
+        # random.seed(20)
+        # data = random.sample(data, 5000)
 
         labeled = 'label' in data[0]
         return DataLoader(data, batch_size=self.config.batch_size, collate_fn=self.get_collate_fn(tokenizer=tokenizer, labeled=labeled), drop_last=False)
