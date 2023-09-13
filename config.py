@@ -782,6 +782,7 @@ class Config:
             # fixed parameters
             'num_labels': 3,    # detection label num
             'output_dropout_prob': 0.2,        # detection head dropout
+            'logging_steps': 10,
 
             # parameters that are able to be tuned
             'detection_loss_weight': 2,
@@ -798,7 +799,7 @@ class Config:
             'batch_size': 32,
 
             # evaluation config
-            'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch   
+            'eval_step': 300,        # steps interval of evaluation, None: 1eval/epoch   
 
             # inference config
             'chinese_marker_substitution': False,

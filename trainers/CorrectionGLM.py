@@ -233,7 +233,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             '--eval_steps', str(settings.eval_step),
             # '--save_strategy', settings.save_strategy,
             '--save_steps', str(settings.eval_step),
-            '--logging_steps', '1',
+            '--logging_steps', str(settings.logging_steps),
             '--learning_rate', str(settings.lr),
             # '--fp16',
             # '--predict_with_generate',
