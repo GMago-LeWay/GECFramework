@@ -28,6 +28,7 @@ class SoftMaskedBertTrainer(Trainer):
         self.config = config
         self.args = args
         self.model = model
+        self.model.to(self.args.device)
 
         self.detector_criterion = nn.BCELoss()  # 检测器部分的损失，Binary CrossEntropy
         self.criterion = nn.NLLLoss()  # 整个模型的损失，Negative Loglikelihood

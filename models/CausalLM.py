@@ -1,8 +1,11 @@
 import torch
+import logging
 from peft import  PeftModel
 from transformers import LlamaForCausalLM, LlamaTokenizer
 from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM
 from transformers import StoppingCriteria, StoppingCriteriaList
+
+logger = logging.getLogger(__name__)
 
 class StoppingCriteriaSub(StoppingCriteria):
     def __init__(self, stops = [], encounters=3):
@@ -26,12 +29,17 @@ class CausalLM(torch.nn.Module):
         self.args = args
         self.config = config
         self.tokenizer = AutoTokenizer.from_pretrained(config.pretrained_model, trust_remote_code=True)
-        self.tokenizer.pad_token = self.tokenizer.eos_token
+        try:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            logger.info("PAD Token WILL be set to EOS token in this model.")
+        except Exception as e:
+            logger.info("Pad Token would NOT be set to EOS token in this model.")
+            
         self.language_model = AutoModelForCausalLM.from_pretrained(config.pretrained_model, trust_remote_code=True, torch_dtype=config.torch_dtype, load_in_8bit=config.load_in_8bit)
         if config.lora_model is not None:
-            print("loading peft model")
+            logger.info("loading peft model")
             self.language_model = PeftModel.from_pretrained(self.language_model, config.lora_model, torch_dtype=config.torch_dtype)
-        # self.language_model.to(args.device)
+        self.language_model.to(args.device)
 
         ## Generation Config
         stop_words = ['\n']

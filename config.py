@@ -25,6 +25,9 @@ class Storage(dict):
 
     def __str__(self):
         return "<" + self.__class__.__name__ + dict.__repr__(self) + ">"
+    
+    def __getstate__(self):
+        return None
 
 
 DATA_DIR_NAME = {
@@ -49,6 +52,7 @@ MODEL_CORR_DATA = {
     'seq2edit': 'mucgec_edit',
     'gector': 'gector_data',
     'chatglm': 'transformers',
+    'correctionglm': 'gec_glm',
 }
 
 DATA_ROOT_DIR = '/home/liwei/workspace/datasets'
@@ -73,6 +77,7 @@ class Config:
             'llama': self.__LLAMA,
             'llama_quant': self.__LLAMA_QUANT,
             'chatglm': self.__ChatGLM,
+            'correctionglm': self.__CorrectionGLM,
             None: self.__NULL,
         }
 
@@ -100,6 +105,7 @@ class Config:
             'mucgec_edit': self.__MuCGEC_Edit,
             'gector_data': self.__GECToR_Data,
             'transformers': self.__TransformersData,
+            'gec_glm': self.__GEC_GLM_Data,
 
             None: self.__NULL,
         }
@@ -452,13 +458,13 @@ class Config:
 
             # pretrained model
             'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'Llama2-Chinese-7b-Chat'),
-            'lora_model': '/home/liwei/workspace/Llama2-Chinese/train/sft/llama2_large_set',
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chatglm2-6b'),
+            'lora_model': None,
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
 
             # model config
             'torch_dtype': torch.float16,
-            'load_in_8bit': True,
+            'load_in_8bit': False,
             'generation_config': dict(
                 temperature=0.2,
                 top_k=10,
@@ -673,7 +679,7 @@ class Config:
     def __GECToR_Data(self):
         dataConfig = {
             'use_multi_append': False,      # use data where multi-append situation are split into multiple sentences.
-            'text_cut': 512,
+            'text_cut': 200,
             'batch_size': 48,
             'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch   
         }
@@ -751,6 +757,68 @@ class Config:
             'batch_size': 32, 
             'print_step': 50,
             'eval_step': 200,      # steps interval of evaluation, None: 1eval/epoch
+        }
+
+        return dataConfig
+
+    def __CorrectionGLM(self, tune):
+        import torch
+
+        Config = {
+            # identifier
+            'name': 'correctionglm',
+
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-large-chinese'),
+            'lora_model': None,
+            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
+
+            # model config
+            'torch_dtype': torch.float32,
+            'load_in_8bit': False,
+            'loss_ignore_id': -100,
+
+            # fixed parameters
+            'num_labels': 3,    # detection label num
+            'output_dropout_prob': 0.2,        # detection head dropout
+
+            # parameters that are able to be tuned
+            'detection_loss_weight': 2,
+            'gradient_accumulation_steps': 4,
+            'lr': 2e-5,
+            'weight_decay': 1e-4,
+            'epoch': 10,
+            'warmup_steps': 50,
+            'lr_scheduler': 'polynomial',
+            'save_strategy': 'epoch',
+
+            # data process parameters
+            'text_cut': 100,
+            'batch_size': 32,
+
+            # evaluation config
+            'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch   
+
+            # inference config
+            'chinese_marker_substitution': False,
+            'generation_config': dict(
+                temperature=0.2,
+                top_k=10,
+                top_p=0.95,
+                do_sample=True,
+                num_beams=1,
+                repetition_penalty=1.3,
+                max_new_tokens=512,
+            ),
+
+        }
+
+        return NotImplementedError() if tune else Config
+    
+    def __GEC_GLM_Data(self):
+        dataConfig = {
+            # 'use_multi_append': False,      # use data where multi-append situation are split into multiple sentences.
         }
 
         return dataConfig

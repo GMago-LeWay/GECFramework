@@ -476,6 +476,7 @@ class JointTrainer(Trainer):
         self.infer_export= "stg_joint_test.xlsx"
         # Training Component
         self.model       = model
+        self.model.to(args.device)
         self.criterion   = {
             'sw'  : torch.nn.CrossEntropyLoss(ignore_index=config.ignore_val).to(args.device),
             'gen' : torch.nn.NLLLoss().to(args.device),

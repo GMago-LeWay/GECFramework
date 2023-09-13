@@ -19,15 +19,15 @@ import codecs
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, default='gector',
-                        help='bert/softmaskedbert/stgjoint/seq2seq/seq2edit/gector/llm/chinese_llama/llama/llama_quant/chatglm')    
+    parser.add_argument('--model', type=str, default='correctionglm',
+                        help='bert/softmaskedbert/stgjoint/seq2seq/seq2edit/gector/llm/chinese_llama/llama/llama_quant/chatglm/correctionglm')    
     parser.add_argument('--task_mode', type=str, default='train',
                         help='train/tune/test/infer/augmentation')  
-    parser.add_argument('--dataset', type=str, default='mucgec',
+    parser.add_argument('--dataset', type=str, default='fcgec',
                         help='hybridset/nlpcc2018task2/fangzhengspell/fangzhenggrammar/guangming/peopledaily/augment/fangzhengaugment/fangzhengdapei/fcgec/mucgec')  
     parser.add_argument('--pre_save_dir', type=str, default='results',
                         help='root path to save results.')
-    parser.add_argument('--devices', type=str, default='0,1,2,3',
+    parser.add_argument('--devices', type=str, default='0,1',
                         help='GPU Environment.')    
     parser.add_argument('--device', type=int, default=0,
                         help='GPU id.')
@@ -52,11 +52,12 @@ import torch
 from transformers import AutoTokenizer
 
 from utils import *
-from data import get_data
+from data import get_data, TransformersDataset
 from train import get_train
 from model import get_model
 from config import Config
-from trainers.base import Trainer
+from trainers.base import Trainer, TrainerBeta
+
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -64,6 +65,7 @@ def setup_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
+
 
 def setup_log(args):
     file_name = os.path.join(args.save_dir, 'log.log')
@@ -84,6 +86,37 @@ def setup_log(args):
         logger.addHandler(stream_handler)
 
 
+def prediction_saving(args, json_results):
+    """
+    In infer task, some dataset requires a specific version of results to evaluate, this function will do the formatting.
+    """
+    save_path = os.path.join(args.save_dir, f'{args.model}-{args.dataset}-{args.task_mode}.json')
+    with codecs.open(save_path, "w", "utf-8") as f:
+        json.dump(json_results, f, ensure_ascii=False, indent=4)
+    logger.info(get_time() + f"Results have been stored in {save_path}.")
+
+    ## MuCGEC output
+    if args.dataset == 'mucgec':
+        save_txt = os.path.join(args.save_dir, f'MuCGEC_test.txt')
+        with codecs.open(save_txt, "w", "utf-8") as f:
+            for item in json_results:
+                f.write("%s\t%s\t%s\n" % (item["id"], item["src"], item["predict"]))
+        with zipfile.ZipFile(os.path.join(args.save_dir, 'submit.zip'), mode='w') as zipf:
+            zipf.write(save_txt, 'MuCGEC_test.txt')
+    
+    ## FCGEC output
+    if args.dataset == 'fcgec':
+        fcgec_json = {}
+        for item in json_results:
+            error_flag = 1 if item["src"] != item["predict"] else 0
+            fcgec_json[item['id']] = {"error_flag": error_flag, "error_type": "IWO", "correction": item["predict"]}
+        fcgec_path = os.path.join(args.save_dir, 'predict.json')
+        with codecs.open(fcgec_path, "w", "utf-8") as f:
+            json.dump(fcgec_json, f, ensure_ascii=False, indent=4)      
+        with zipfile.ZipFile(os.path.join(args.save_dir, 'predict.zip'), mode='w') as zipf:
+            zipf.write(fcgec_path, 'predict.json')
+
+
 class ExperimentsOfGEC:
     def __init__(self, args) -> None:
         self.args = args
@@ -91,10 +124,7 @@ class ExperimentsOfGEC:
     def run(self, config):
         dataset_ = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
         model_to_be_init = get_model(model=self.args.model)
-        if self.args.model in ['seq2seq', 'seq2edit', 'chatglm']:
-            model = model_to_be_init(config=config, args=self.args)
-        else:
-            model = model_to_be_init(config=config, args=self.args).to(self.args.device)
+        model = model_to_be_init(config=config, args=self.args)
         train_to_be_init = get_train(model=self.args.model)
         train: Trainer = train_to_be_init(args=self.args, config=config, model=model)
         if self.args.model in ['seq2seq', 'seq2edit', 'chatglm']:
@@ -121,10 +151,7 @@ class ExperimentsOfGEC:
         logger.info(get_time() + f"Test: Use model {config.name} at {self.args.load}, on dataset {self.args.dataset}")
         logger.info(f"Args: {self.args}; Config: {config}")
         model_to_be_init = get_model(model=self.args.model)
-        if self.args.model in ['seq2seq', 'seq2edit', 'chatglm']:
-            model = model_to_be_init(config=config, args=self.args)
-        else:
-            model = model_to_be_init(config=config, args=self.args).to(self.args.device)
+        model = model_to_be_init(config=config, args=self.args)
         train_to_be_init = get_train(model=self.args.model)
         train: Trainer = train_to_be_init(args=self.args, config=config, model=model)
         train.load(self.args.load)
@@ -159,10 +186,7 @@ class ExperimentsOfGEC:
         logger.info(get_time() + f"Infer: Use model {config.name} at {self.args.load}, on dataset {self.args.dataset}")
         logger.info(f"Args: {self.args}; Config: {config}")
         model_to_be_init = get_model(model=self.args.model)
-        if self.args.model in ['seq2seq', 'seq2edit', 'chatglm']:
-            model = model_to_be_init(config=config, args=self.args)
-        else:
-            model = model_to_be_init(config=config, args=self.args).to(self.args.device)
+        model = model_to_be_init(config=config, args=self.args)
         train_to_be_init = get_train(model=self.args.model)
         train: Trainer = train_to_be_init(args=self.args, config=config, model=model)
         train.load(self.args.load)
@@ -179,34 +203,10 @@ class ExperimentsOfGEC:
         else:
             raise NotImplementedError()
         json_results = train.do_infer(dataloader, mode="INFER")
-        save_path = os.path.join(self.args.save_dir, f'{self.args.model}-{self.args.dataset}-{self.args.task_mode}.json')
-        with codecs.open(save_path, "w", "utf-8") as f:
-            json.dump(json_results, f, ensure_ascii=False, indent=4)
-        logger.info(get_time() + f"Results have been stored in {save_path}.")
         
-        ## MuCGEC output
-        if self.args.dataset == 'mucgec':
-            save_txt = os.path.join(self.args.save_dir, f'MuCGEC_test.txt')
-            with codecs.open(save_txt, "w", "utf-8") as f:
-                for item in json_results:
-                    f.write("%s\t%s\t%s\n" % (item["id"], item["src"], item["predict"]))
-            with zipfile.ZipFile(os.path.join(self.args.save_dir, 'submit.zip'), mode='w') as zipf:
-                zipf.write(save_txt, 'MuCGEC_test.txt')
-        
-        ## FCGEC output
-        if self.args.dataset == 'fcgec':
-            fcgec_json = {}
-            for item in json_results:
-                error_flag = 1 if item["src"] != item["predict"] else 0
-                fcgec_json[item['id']] = {"error_flag": error_flag, "error_type": "IWO", "correction": item["predict"]}
-            fcgec_path = os.path.join(self.args.save_dir, 'predict.json')
-            with codecs.open(fcgec_path, "w", "utf-8") as f:
-                json.dump(fcgec_json, f, ensure_ascii=False, indent=4)      
-            with zipfile.ZipFile(os.path.join(self.args.save_dir, 'predict.zip'), mode='w') as zipf:
-                zipf.write(fcgec_path, 'predict.json')
+        prediction_saving(args=self.args, json_results=json_results)
         
         return json_results
-
 
     def run_task(self, seeds, config, fixed_csv=False):
         logger.info('************************************************************')
@@ -268,7 +268,6 @@ class ExperimentsOfGEC:
         df.to_csv(save_path, index=None)
         logger.info('************************************************************')
 
-
     def run_tune(self, preconfig, seeds, tune_times=50):
         has_debuged = []
         tune_number = 0
@@ -298,7 +297,6 @@ class ExperimentsOfGEC:
                 msg = traceback.format_exc()
                 logger.info(get_time() + 'Error: %s' % str(msg))
 
-
     def conduct(self):
         preset_config = {}
 
@@ -318,6 +316,67 @@ class ExperimentsOfGEC:
         # except Exception as e:
         #     msg = traceback.format_exc()
         #     logger.info(get_time() + 'Error: %s' % str(msg))
+
+
+class ExperimentsOfGECBeta:
+    def __init__(self, args) -> None:
+        self.args = args
+
+    def run(self, config):
+        setup_seed(self.args.seed)
+
+        # data settings
+        raw_dataset_loader: TransformersDataset = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
+        raw_dataset = raw_dataset_loader.get_dataset_map(split=None)
+        logger.info(get_time() + f"Train: Use model {config.name} at {self.args.load}, on dataset {self.args.dataset}")
+        logger.info(f"Args: {self.args}; Config: {config}")
+        # model settings
+        model_to_be_init = get_model(model=self.args.model)
+        model = model_to_be_init(args=self.args, settings=config)
+        train_to_be_init = get_train(model=self.args.model)
+        trainer: TrainerBeta = train_to_be_init(args=self.args, settings=config, model=model, dataset=raw_dataset)
+        # do train
+        if self.args.load:
+            trainer.load(self.args.load)
+        best_score = trainer.do_train()
+        # save result
+        logger.info(get_time() + '本次最优结果：%.4f' % best_score)
+        # do test
+        trainer.load(self.args.save_dir)
+        test_results = trainer.do_test()
+        return test_results
+
+    def run_infer(self, config):
+        # only inferring
+        setup_seed(self.args.seed)
+
+        # data settings
+        raw_dataset_loader: TransformersDataset = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
+        raw_dataset = raw_dataset_loader.get_dataset_map(split='test')
+        logger.info(get_time() + f"Infer: Use model {config.name} at {self.args.load}, on dataset {self.args.dataset}")
+        logger.info(f"Args: {self.args}; Config: {config}")
+        # model settings
+        model_to_be_init = get_model(model=self.args.model)
+        model = model_to_be_init(self.args, config)
+        train_to_be_init = get_train(model=self.args.model)
+        trainer: TrainerBeta = train_to_be_init(args=self.args, config=config, model=model, dataset=raw_dataset)
+        trainer.load(self.args.load)
+        json_results = trainer.do_infer()
+        prediction_saving(args=self.args, json_results=json_results)
+        
+        return json_results
+
+    def conduct(self):
+        preset_config = {}
+
+        if self.args.task_mode == 'infer':
+            config = Config(model=self.args.model, dataset=self.args.dataset, preconfig=preset_config).get_config()
+            self.run_infer(config=config)                
+        elif self.args.task_mode == 'train':
+            config = Config(model=self.args.model, dataset=self.args.dataset, preconfig=preset_config).get_config()
+            self.run(config=config)
+        else:
+            raise NotImplementedError()
 
 
 ## LLM model only used for inference. Simplified experiments.
@@ -365,32 +424,8 @@ class ExperimentsOfLLM:
 
         dataloader = dataset_.get_test_dataloader()
         json_results = train.do_infer(dataloader, mode="INFER")
-        save_path = os.path.join(self.args.save_dir, f'{self.args.model}-{self.args.dataset}-{self.args.task_mode}.json')
-        with codecs.open(save_path, "w", "utf-8") as f:
-            json.dump(json_results, f, ensure_ascii=False, indent=4)
-        logger.info(get_time() + f"Results have been stored in {save_path}.")
+        prediction_saving(args=self.args, json_results=json_results)
 
-        ## MuCGEC output
-        if self.args.dataset == 'mucgec':
-            save_txt = os.path.join(self.args.save_dir, f'MuCGEC_test.txt')
-            with codecs.open(save_txt, "w", "utf-8") as f:
-                for item in json_results:
-                    f.write("%s\t%s\t%s\n" % (item["id"], item["src"], item["predict"]))
-            with zipfile.ZipFile(os.path.join(self.args.save_dir, 'submit.zip'), mode='w') as zipf:
-                zipf.write(save_txt, 'MuCGEC_test.txt')
-        
-        ## FCGEC output
-        if self.args.dataset == 'fcgec':
-            fcgec_json = {}
-            for item in json_results:
-                error_flag = 1 if item["src"] != item["predict"] else 0
-                fcgec_json[item['id']] = {"error_flag": error_flag, "error_type": "IWO", "correction": item["predict"]}
-            fcgec_path = os.path.join(self.args.save_dir, 'predict.json')
-            with codecs.open(fcgec_path, "w", "utf-8") as f:
-                json.dump(fcgec_json, f, ensure_ascii=False, indent=4)      
-            with zipfile.ZipFile(os.path.join(self.args.save_dir, 'predict.zip'), mode='w') as zipf:
-                zipf.write(fcgec_path, 'predict.json')
-        
         return json_results
     
     def conduct(self):
@@ -460,6 +495,7 @@ EXPERIMENTS = {
     'llama': ExperimentsOfLLM,
     'llama_quant': ExperimentsOfLLM,
     'chatglm': ExperimentsOfGEC,
+    'correctionglm': ExperimentsOfGECBeta,
 }
 
 if __name__ == '__main__':

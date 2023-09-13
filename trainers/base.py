@@ -1,3 +1,5 @@
+from typing import Dict, List
+from datasets import Dataset
 
 class Trainer:
     def __init__(self, args, config, model) -> None:
@@ -46,6 +48,44 @@ class Trainer2:
     def do_infer(self, dataset, mode="INFER"):
         """
         do infer or test process, based on decoded text of sentences' tokens.
+        """
+        raise NotImplementedError()
+
+    def save(self, save_dir):
+        raise NotImplementedError()
+
+    def load(self, save_dir):
+        raise NotImplementedError()
+
+
+class TrainerBeta:
+    def __init__(self, args, settings, model, dataset: Dict[str, Dataset]) -> None:
+        self.args = args
+        self.settings = settings
+        self.model = model
+        self.dataset: Dict[str, Dataset] = dataset
+
+    def dataset_transform(self):
+        """
+        Transform (transformers) dataset to meet the requirements of model
+        """
+        raise NotImplementedError()
+
+    def do_train(self):
+        """
+        do training, using transformers trainer.
+        """
+        raise NotImplementedError()
+
+    def do_test(self):
+        """
+        do test process on labeled dataset.
+        """
+        raise NotImplementedError()
+
+    def do_infer(self):
+        """
+        do infer on inputs.
         """
         raise NotImplementedError()
 

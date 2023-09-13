@@ -12,6 +12,7 @@ MODULE_MAP = {
     'llama': ('models.Llama', 'LlamaNormal7B'),
     'llama_quant': ('models.Llama', 'LlamaQuant'),
     'chatglm': ('models.ChatGLM', 'ChatGLM'),
+    'correctionglm': ('models.CorrectionGLM', 'GLMForGrammaticalCorrection'),
 }
 
 

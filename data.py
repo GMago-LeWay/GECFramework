@@ -16,9 +16,8 @@ import scipy.io as sio
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 from transformers import HfArgumentParser
-
-
 from transformers import AutoTokenizer
+import datasets
 
 from config import Config
 from config import MODEL_CORR_DATA, DATA_ROOT_DIR, DATA_DIR_NAME, MODEL_ROOT_DIR
@@ -83,7 +82,6 @@ class TextLabelDataset:
         else:
             raise FileNotFoundError()
 
-    
     def get_collate_fn(self, tokenizer=None, labeled=True):
         if labeled:
             def collate_fn(batch):
@@ -253,18 +251,183 @@ class TextLabelDataset:
                     json.dump(Ids, f, indent=4)
 
 
-class TransformersDataset(TextLabelDataset):
-    def __init__(self, args=None, config=None) -> None:
-        super().__init__(args, config)
+class TransformersDataset:
+    def __init__(self, args, config) -> None:
+        self.args = args
+        self.config = config
+
+        ## judge the status of datasets
+        # well-split, to-be-split, corrupted, raw
+        self.train_data_file = os.path.join(self.config.data_dir, 'train.json')
+        self.valid_data_file = os.path.join(self.config.data_dir, 'valid.json')
+        self.test_data_file = os.path.join(self.config.data_dir, 'test.json')
+        self.data_file = os.path.join(self.config.data_dir, 'data.json')
+        self.status = None
+        if os.path.exists(self.train_data_file) and os.path.exists(self.valid_data_file) and os.path.exists(self.test_data_file):
+            self.status = 'well-split'
+        elif not (os.path.exists(self.train_data_file) or os.path.exists(self.valid_data_file) or os.path.exists(self.test_data_file)) and os.path.exists(self.data_file):
+            self.status = 'to-be-split'
+        elif not (os.path.exists(self.train_data_file) or os.path.exists(self.valid_data_file) or os.path.exists(self.test_data_file) or os.path.exists(self.data_file)):
+            self.status = 'raw'
+            logger.info("Warning: You are trying to construct a raw dataset")
+        else:
+            self.status = 'corrupted'
+            logger.info("Warning: You are trying to construct a corrputed/irregular dataset")
+
+    def _load_json_and_formatted(self, file_path):
+        data = json.load(open(file_path))
+        if type(data) == list:
+            assert len(data) != 0
+            new_data = {}
+            if 'id' not in data[0]:
+                new_data['id'] = list(range(0, len(data)))
+            for key in data[0]:
+                new_data[key] = [item[key] for item in data]
+            return new_data
+        else:
+            raise NotImplementedError()
     
-    def get_collate_fn(self, tokenizer=None, labeled=True):
-        return super().get_collate_fn(tokenizer, labeled)
+    def _get_dataset(self, split) -> datasets.Dataset:
+        assert self.status == 'well-split'
+        assert split in ['train', 'valid', 'test']
+        data = self._load_json_and_formatted(os.path.join(self.config.data_dir, split+'.json'))
+        dataset = datasets.Dataset.from_dict(data)
+        return dataset
     
-    def get_train_val_dataloader(self, tokenizer) -> tuple[DataLoader, DataLoader, DataLoader]:
-        return None, None, None
+    def _get_whole_data(self) -> datasets.Dataset:
+        assert os.path.exists(self.data_file)
+        data = self._load_json_and_formatted(self.data_file)
+        dataset = datasets.Dataset.from_dict(data)
+        return dataset
     
-    def get_test_dataloader(self, tokenizer=None) -> DataLoader:
-        return None
+    def _train_val_test_split(self, shuffle=20):
+        gross_data = self._get_whole_data()
+        gross_data.shuffle(seed=shuffle)
+        test_num = int(self.config.test_percent * len(gross_data))
+        val_num = int(self.config.valid_percent * len(gross_data))
+        test = gross_data[-test_num:]
+        # select data
+        train = gross_data[:len(gross_data)-val_num-test_num]
+        val = gross_data[len(gross_data)-val_num-test_num: -test_num]
+        ## save
+        with open(self.train_data_file, 'w') as f:
+            json.dump(train, f, ensure_ascii=False, indent=4)
+        with open(self.valid_data_file, 'w') as f:
+            json.dump(val, f, ensure_ascii=False, indent=4)
+        with open(self.test_data_file, 'w') as f:
+            json.dump(test, f, ensure_ascii=False, indent=4)
+        
+    def get_dataset_map(self, split=None)-> dict:
+        assert self.status in ['well-split', 'to-be-split']
+        if self.status == 'to-be-split':
+            logger.info("Warning: You are trying to get one split of an unsplit dataset, so the data will be randomly split and saved.")
+            self._train_val_test_split()
+        if split:
+            assert split in ['train', 'valid', 'split']
+            dataset_map = {}
+            dataset_map[split] = self._get_dataset(split=split)
+            for s in ['train', 'valid', 'split']:
+                if s not in dataset_map:
+                    dataset_map[s] = []
+            return dataset_map
+        else:
+            train_set = self._get_dataset('train')
+            val_set = self._get_dataset('valid')
+            test_set = self._get_dataset('test')
+            return {'train': train_set, 'valid': val_set, 'test': test_set}
+
+    def process_data_to_STG_Joint(self):
+        joint_save_dir = os.path.join(self.config.data_dir, 'stg_joint')
+        if not os.path.exists(joint_save_dir):
+            os.makedirs(joint_save_dir)
+
+        data_list = self.get_dataset_map()
+        
+        model_config = Config(model='stgjoint', dataset='fangzhengdapei').get_config()
+        check_tokenizer = AutoTokenizer.from_pretrained(os.path.join(MODEL_ROOT_DIR, "chinese-roberta-wwm-ext"))
+
+        ## To check item for TaggerConvertor
+        def _preprocess_gendata(ops: dict):
+            '''
+            Pre-tokenize modify labels and insert labels for convertor
+            :param ops: operator (dict)
+            :return: processed operator (dict)
+            '''
+            if 'Modify' not in ops.keys() and 'Insert' not in ops.keys():
+                return ops
+            nop = copy(ops)
+            if 'Modify' in ops.keys():
+                nmod = []
+                for mod in nop['Modify']:
+                    if isinstance(mod['label'], list):
+                        labstr = mod['label'][0]
+                    else:
+                        labstr = mod['label']
+                    mod['label_token'] = check_tokenizer.convert_tokens_to_ids(check_tokenizer.tokenize(labstr))
+                    nmod.append(mod)
+                nop['Modify'] = nmod
+            if 'Insert' in ops.keys():
+                nins = []
+                for ins in nop['Insert']:
+                    if isinstance(ins['label'], list):
+                        labstr = ins['label'][0]
+                    else:
+                        labstr = ins['label']
+                    ins['label_token'] = check_tokenizer.convert_tokens_to_ids(check_tokenizer.tokenize(labstr))
+                    nins.append(ins)
+                nop['Insert'] = nins
+            return nop
+        
+        ## convert data, delete data with error for train and valid set.
+        ## test data will be reserved.
+        for split in data_list:
+            Sentence = []
+            Label = []   
+            Ids = []
+            exist_id = "id" in data_list[split][0]
+            for item in tqdm(data_list[split]):   
+                if split == 'test':
+                    Sentence.append(item['text'])
+                    Label.append('[]') 
+                    if exist_id:
+                        Ids.append(item['id'])
+                    continue
+                ## generate label
+                token = check_tokenizer.tokenize(TextWash.punc_wash(item['text'])) 
+                sent_recycle_len = len(check_tokenizer.convert_tokens_to_string(token).replace(" ", ""))    
+                sent_wash_len = len(TextWash.punc_wash(item['text']))
+                if sent_wash_len != sent_recycle_len:
+                    continue
+                try:
+                    opt_edit = min_dist_opt(item['text'], item['label'])  
+                    edit_label = [opt_edit]
+
+                    ## Check TaggerConvertor
+                    kwargs = {
+                        'sentence' : TextWash.punc_wash(item['text']),
+                        'ops' : _preprocess_gendata(opt_edit),
+                        'token' : token
+                    }
+                    ## test process
+                    tokens = ["[CLS]"] + token + ["[SEP]"]
+                    tagger = TaggerConverter(model_config, auto=True, **kwargs)
+                    label_comb = tagger.getlabel(types='dict')
+                    comb_label = combine_insert_modify(label_comb['ins_label'], label_comb['mod_label'])
+                    gen_token, gen_label = convert_tagger2generator(tokens, label_comb['tagger'], label_comb['mask_label'])
+
+                    ## if no error occurred, the data item will be added.
+                    Sentence.append(item['text'])
+                    Label.append(json.dumps(edit_label, ensure_ascii=False))
+                    if exist_id:
+                        Ids.append(item['id'])
+                except:
+                    print("Error While Coverting: %s; %s" % (item['text'], item['label']))
+            print(f"Data num {len(data_list[split])} -> {len(Sentence)}")
+            pd.DataFrame({"Sentence": Sentence, "Label": Label}).to_csv(os.path.join(joint_save_dir, f'{split}.csv'), index=False, encoding='utf_8_sig')
+            if exist_id:  # save ids to .id.json  
+                assert len(Ids) == len(Sentence) == len(Label)
+                with open(os.path.join(joint_save_dir, f'{split}.id.json'), 'w') as f:
+                    json.dump(Ids, f, indent=4)
 
 
 class MuCGECSeq2SeqDataset:  ## MuCGEC
@@ -300,7 +463,7 @@ class MuCGECSeq2SeqDataset:  ## MuCGEC
         return preprocess_function
 
     ## For model with transformers trainer, return dataset
-    def train_val_test_data(self) -> tuple[Dataset, Dataset, Dataset]:
+    def train_val_test_data(self):
         datasets = {}
         data_files = {}
         if self.data_args.train_file is not None:
@@ -403,10 +566,9 @@ class MuCGECSeq2SeqDataset:  ## MuCGEC
             item_id, src, tgt = eval(segments[0].strip()), segments[1].strip(), segments[2].strip()
             if tgt == "没有错误":
                 tgt = str(src)
-            valid_data_item = {"id": item_id, "text": src, "label": tgt}
+            valid_data_item = {"id": item_id, "text": src, "label": tgt, "other_labels": []}
             for i in range(3, len(segments)):
-                # TODO: 这种多标签方式好吗。。
-                valid_data_item[f'label{i-1}'] = segments[i].strip()
+                valid_data_item["other_labels"].append(segments[i].strip())
             new_val_data.append(valid_data_item)
 
         test_file = os.path.join(self.config.data_dir, 'origin', "MuCGEC_test.txt")
@@ -432,7 +594,6 @@ class MuCGECEditDataset(TextLabelDataset):
         self.args = args
         self.config = config
         self.tokenizer = FullTokenizer(vocab_file=config.vocab_file, do_lower_case=False)
-        
 
     def segment_bert(self, line):
         line = line.strip()
@@ -465,7 +626,6 @@ class MuCGECEditDataset(TextLabelDataset):
         self.preprocess_data_list(train_list, os.path.join(seq2edit_save_dir, 'train.label'))
         self.preprocess_data_list(val_list, os.path.join(seq2edit_save_dir, 'valid.label'))
 
-    
     def train_val_test_raw_data(self):
         return super(MuCGECEditDataset, self).train_val_test_data()
 
@@ -594,7 +754,6 @@ class GECToRDataset(TextLabelDataset):
             print(f"Test Data will be remained.")
             json.dump(test_list, f, ensure_ascii=False, indent=4)
 
-    
     def get_train_val_dataloader(self, tokenizer) -> tuple[DataLoader, DataLoader, DataLoader]:
         train, val, test = self.train_val_test_data(use_processed_data=self.config.use_multi_append)
 
@@ -660,6 +819,7 @@ class GECToRDataset(TextLabelDataset):
 class NLPCC2018TASK2(TextLabelDataset):
     def __init__(self, args=None, config=None) -> None:
         super(NLPCC2018TASK2, self).__init__(args, config)
+
 
 class FCGEC:
     def __init__(self, args=None, config=None) -> None:
@@ -875,9 +1035,9 @@ class FCGEC_SEQ2SEQ:
             operates = unpack(operate)
             return get_postsentence(sentence, operates)
         
-        mul_labels2mul_samples = True
-        if desc != 'Train':
-            mul_labels2mul_samples = False
+        # mul_labels2mul_samples = True
+        # if desc != 'Train':
+        mul_labels2mul_samples = False
         
         if mul_labels2mul_samples:
             print("In processing, the sample with multiple labels will be split to multiple samples.")
@@ -891,8 +1051,8 @@ class FCGEC_SEQ2SEQ:
                 outs.append('\t'.join(post_sentences))
                 out_data.append(outs)
         else:
-            ## In original STG-Joint model training, a filter method is applied for choosing one edit label for training.
-            ## The purpose for the following code is find the chosen label and all other labels, the former will be marked as 'label', the latter will be marked as 'label2/3/4/5...'
+            ## In original STG-Joint model training, a filter method is applied for choosing only one edit label for training.
+            ## The purpose for the following code is find the chosen label and all other labels, the former will be marked as 'label', the latter will be marked as 'other_labels'
             print("In processing, the sample with multiple labels will choose first label as the only target text.")
             for datk in tqdm(dataset.keys(), desc='Processing {} data'.format(desc)):
                 outs = []
@@ -914,8 +1074,9 @@ class FCGEC_SEQ2SEQ:
                         match_label_num += 1
                     else:
                         reorderd_sentences.append(sentence)
-                # TODO: validate the effectiveness of this method.
-                assert match_label_num == 1, "There should be 1 sentence matched with the chosen sentence from original STG-Joint method."
+                # TODO: Why unmatched case?
+                if match_label_num != 1:
+                    print(f"Warning: There should be 1 sentence matched with the chosen sentence from original STG-Joint method, but find {match_label_num}.")
                 outs.append('\t'.join(reorderd_sentences))
                 out_data.append(outs)
             # print(f"{multiple_label_num} samples has multiple labels in one filtered edit label.")
@@ -944,6 +1105,8 @@ class FCGEC_SEQ2SEQ:
             for key in key_transformation:
                 if key in columns:
                     json_item[key_transformation[key]] = item[key]
+
+            json_item["other_labels"] = []    # FCGEC contain multiple labels
             
             # multiple label added
             if mul_labels2mul_samples:
@@ -956,7 +1119,7 @@ class FCGEC_SEQ2SEQ:
                 labels = json_item['label'].split('\t')
                 json_item['label'] = labels[0]
                 for i, label in enumerate(labels[1:]):
-                    json_item[f'label{i+2}'] = label
+                    json_item["other_labels"].append(label)
                 json_data.append(json_item)
 
         with open(out_path, 'w') as f:
@@ -1088,7 +1251,6 @@ class FangZhengTest(TextLabelDataset):
         return data
 
 
-
 class HybridSet(TextLabelDataset):
     def __init__(self, args=None, config=None) -> None:
         super().__init__(args, config)
@@ -1125,6 +1287,7 @@ class HybridSet(TextLabelDataset):
             
         return data
 
+
 class Corpus(TextLabelDataset):
     def __init__(self, args=None, config=None) -> None:
         super().__init__(args, config)
@@ -1143,7 +1306,6 @@ class Corpus(TextLabelDataset):
         
         return no_text_data
 
-        
 
 class Augment(TextLabelDataset):
     def __init__(self, args=None, config=None) -> None:
@@ -1257,7 +1419,6 @@ class FangZhengAugment(TextLabelDataset):
 
         return final_data         
 
-
     def data(self):
         assert os.path.exists(self.file)
         with open(self.file, "r") as f:
@@ -1286,7 +1447,7 @@ def get_data(dataset_name: str, model_name: str=None):
         'mucgec_edit': MuCGECEditDataset,
         'joint': FCGEC,
         'gector_data': GECToRDataset,
-        'transformers': TransformersDataset,
+        'gec_glm': TransformersDataset,
     }
 
     if model_name in MODEL_CORR_DATA:

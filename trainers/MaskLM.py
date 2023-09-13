@@ -23,6 +23,7 @@ class MaskLMTrain(Trainer):
         self.args = args
         self.config = config
         self.model = model
+        self.model.to(self.args.device)
         self.criterion = nn.NLLLoss()
         self.metrics = Metrics().get_metrics(config.metrics)
 

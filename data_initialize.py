@@ -116,6 +116,12 @@ def preprocess_seq2edit(dataset_name):
     data = get_data(dataset_name, 'seq2edit')(None, config)
     data.preprocess_data()
 
+def prepocess_mucgec():
+    dataset_name = 'mucgec'
+    config = Config('seq2seq', dataset_name, False).get_config()
+    data = get_data(dataset_name, 'seq2seq')(None, config)
+    data.process_raw_file()
+
 def preprocess_stgjoint(dataset_name):
     ### Use it when dataset is already split.
     config = Config(None, dataset_name, False).get_config()
@@ -164,11 +170,12 @@ if __name__ == "__main__":
     # setup_seed(111)
     # preprocess_stgjoint('mucgec')
     # preprocess_seq2edit('augment')
-    # convert_fcgec_seq2seq()
+    convert_fcgec_seq2seq()
+    prepocess_mucgec()
     # process_gector_multi_append_data('fcgec')
     # split_data('augment')
 
-    split_test_data_to_new_dataset('../datasets/FangZhengSpell', '../datasets/FangZhengSpellv2', 1/2)
-    split_test_data_to_new_dataset('../datasets/FangZhengSpell', '../datasets/FangZhengSpellv3', 1/3)
-    split_test_data_to_new_dataset('../datasets/FangZhengGrammar', '../datasets/FangZhengGrammarv2', 1/2)
-    split_test_data_to_new_dataset('../datasets/FangZhengGrammar', '../datasets/FangZhengGrammarv3', 1/3)
+    # split_test_data_to_new_dataset('../datasets/FangZhengSpell', '../datasets/FangZhengSpellv2', 1/2)
+    # split_test_data_to_new_dataset('../datasets/FangZhengSpell', '../datasets/FangZhengSpellv3', 1/3)
+    # split_test_data_to_new_dataset('../datasets/FangZhengGrammar', '../datasets/FangZhengGrammarv2', 1/2)
+    # split_test_data_to_new_dataset('../datasets/FangZhengGrammar', '../datasets/FangZhengGrammarv3', 1/3)
