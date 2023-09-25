@@ -323,10 +323,10 @@ class TransformersDataset:
             logger.info("Warning: You are trying to get one split of an unsplit dataset, so the data will be randomly split and saved.")
             self._train_val_test_split()
         if split:
-            assert split in ['train', 'valid', 'split']
+            assert split in ['train', 'valid', 'test']
             dataset_map = {}
             dataset_map[split] = self._get_dataset(split=split)
-            for s in ['train', 'valid', 'split']:
+            for s in ['train', 'valid', 'test']:
                 if s not in dataset_map:
                     dataset_map[s] = []
             return dataset_map

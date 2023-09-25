@@ -10,6 +10,7 @@ dataset_provider/old_dataset/**
 test.py
 **/samples/**
 myscripts/
+*.arrow
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

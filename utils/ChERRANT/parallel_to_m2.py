@@ -98,15 +98,59 @@ def main(args):
         #             f.write(ret)
         #             f.write("\n")
 
+#### interface ###
+
+def annotate_independent(sent_list, segmented=False, no_simplified=True):
+    """
+    :param sent_list: [src, tgt1, tgt2,...] converted by one example
+    :return:
+    """
+    source = sent_list[0]
+    if segmented:
+        source = source.strip()
+    else:
+        source = "".join(source.strip().split())
+    output_str = ""
+    for idx, target in enumerate(sent_list[1:]):
+        try:
+            if segmented:
+                target = target.strip()
+            else:
+                target = "".join(target.strip().split())
+            if not no_simplified:
+                target = cc.convert(target)
+            source_tokenized, target_tokenized = sentence_to_tokenized[source], sentence_to_tokenized[target]
+            out, cors = annotator(source_tokenized, target_tokenized, idx)
+            if idx == 0:
+                output_str += "".join(out[:-1])
+            else:
+                output_str += "".join(out[1:-1])
+        except Exception:
+            raise Exception
+    output = {'text': None, 'label': None, 'text_split': None, 'edit_labels': []}
+    for line in output_str.strip().split('\n'):
+        splits = line.split(' ', maxsplit=1)
+        assert len(splits) == 2, f'{splits}'
+        code, content = splits
+        if code == 'S':
+            output['text_split'] = content.strip()
+        elif code[0] == 'T':
+            output["edit_labels"].append({'target_split': content, 'edits': []})
+        elif code == 'A':
+            output["edit_labels"][-1]["edits"].append(content)
+    return output
+
+
 def to_m2(
         ids,
         src_tgt_texts,
-        device, 
+        device=0, 
         segmented=False, 
         granularity="char", 
         multi_cheapest_strategy="all",
         batch_size=128,
         no_simplified=True,
+        worker_num=16,
     ):
     '''
     src_tgt_texts: list[[src, tgt1, tgt2, ...]]
@@ -150,34 +194,13 @@ def to_m2(
             sentence_to_tokenized[s] = r  # Get tokenization map.
 
     outputs = []
-    # 单进程模式
-    for sent_list in src_tgt_texts:
-        source = sent_list[0]
-        if segmented:
-            source = source.strip()
-        else:
-            source = "".join(source.strip().split())
-        output_str = ""
-        for idx, target in enumerate(sent_list[1:]):
-            try:
-                if segmented:
-                    target = target.strip()
-                else:
-                    target = "".join(target.strip().split())
-                if not no_simplified:
-                    target = cc.convert(target)
-                source_tokenized, target_tokenized = sentence_to_tokenized[source], sentence_to_tokenized[target]
-                out, cors = annotator(source_tokenized, target_tokenized, idx)
-                if idx == 0:
-                    output_str += "".join(out[:-1])
-                else:
-                    output_str += "".join(out[1:-1])
-            except Exception:
-                raise Exception
-        outputs.append(output_str.strip())
+    # 多进程模式
+    with Pool(worker_num) as pool:
+        for ret in pool.imap(annotate_independent, tqdm(src_tgt_texts), chunksize=8):
+            if ret:
+                outputs.append(ret)
 
     return outputs
-
 
 
 if __name__ == "__main__":

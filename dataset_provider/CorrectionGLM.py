@@ -145,7 +145,6 @@ class GLMDataProcessor:
         self.edit_extractor = TokenizerBasedTextEditProcessor(self.tokenizer)
         self.args = args
         self.config = config
-        self.text_cut = config.text_cut
         # edit settings
         self.keep_label = self.edit_extractor.keep_label
         self.insert_label = self.edit_extractor.insert_label
@@ -153,7 +152,7 @@ class GLMDataProcessor:
         self.edit_label_map = self.edit_extractor.edit_label_map
         self.edit_label_id_map = self.edit_extractor.edit_label_id_map
         # detection part template for input
-        self.detection_prefix = '请检查其中的错误并修改：'
+        self.detection_prefix = config.prompt
         self.detection_prefix_tokens = self.tokenizer.encode(self.detection_prefix)
         self._loss_ignore_id = -100
     
@@ -216,7 +215,6 @@ class GLMDataProcessor:
             'target_ids': targets, 
             'position_ids': position_ids,
             'source_length': source_length,
-            'prefix_length': 0,
         }
         
 
@@ -237,7 +235,7 @@ class GLMDataProcessor:
                 # case 2: the last token is i-1 but last label is INSERT (like ...I,K... or ...I,I... )
                 else:
                     if last_correct_token_idx > 0 and edit_labels[i-1]==self.insert_label:
-                        mask_spans.append((i+1, i+1))
+                        mask_spans.append((i, i))
                 last_correct_token_idx = i
         
         position_ids = np.ones(len(src_tokens)+1, dtype=int)
@@ -257,32 +255,36 @@ class GLMDataProcessor:
             source_tokens.append(src_tokens[last: start])
             source_tokens.append([mask_id])
             source_position_ids.append(position_ids[last: start])
-            mask_tokens_position.append(len(source_tokens)-1)
+            mask_tokens_position.append(sum(map(len, source_tokens))-1)
             if start == end: # INSERT operation position, reserved position id
                 source_position_ids.append([position_ids[start]-1])
             else:
                 source_position_ids.append([position_ids[start]])
             current_length += start - last + 1
             last = end
-        if last < len(source_tokens):
+        if last < len(src_tokens):
             # local_spans.append((current_length, current_length + len(original_src_tokens) - last))
-            source_tokens.append(source_tokens[last:])
+            source_tokens.append(src_tokens[last:])
             source_position_ids.append(position_ids[last:len(src_tokens)])
         source_length = sum(map(len, source_tokens))
 
-        tokens = np.concatenate(source_tokens + [self.tokenizer.sop_token_id])
-        # loss_masks = np.ones(len(tokens), dtype=np.long)
-        # loss_masks[:source_length] = 0
-        position_ids = np.concatenate(source_position_ids + [mask_tokens_position[0]])
-        block_position_ids = np.concatenate(
-            [np.zeros(source_length, dtype=int)] + [1])
-        position_ids = np.stack([position_ids, block_position_ids], axis=0)
+        if mask_tokens_position:
+            tokens = np.concatenate(source_tokens + [[self.tokenizer.sop_token_id]], dtype=int)
+            # loss_masks = np.ones(len(tokens), dtype=np.long)
+            # loss_masks[:source_length] = 0
+            position_ids = np.concatenate(source_position_ids + [[mask_tokens_position[0]]])
+            block_position_ids = np.concatenate(
+                [np.zeros(source_length, dtype=int), [1]])
+            position_ids = np.stack([position_ids, block_position_ids], axis=0)
+        else:
+            tokens = np.concatenate(source_tokens, dtype=int)
+            position_ids = np.stack([np.concatenate(source_position_ids), np.zeros(source_length, dtype=int)], axis=0)
+            
         return {
             'input_ids': tokens, 
-            'target_ids': [self._loss_ignore_id] * len(tokens), 
+            'target_ids': np.array([self._loss_ignore_id] * len(tokens), dtype=int), 
             'position_ids': position_ids,
             'source_length': source_length,
-            'prefix_length': 0,
         }
 
     def add_detection_prefix(self, glm_example: Dict, src_tokens: List[int], edit_labels: List[str]):
@@ -290,7 +292,7 @@ class GLMDataProcessor:
         prefix_length = len(detection_tokens)
         full_src_tokens = np.concatenate([detection_tokens, glm_example['input_ids']])
         full_target_tokens = np.concatenate([[self._loss_ignore_id] * prefix_length, glm_example['target_ids']])
-        full_position_ids = np.concatenate([np.arange(0, prefix_length), glm_example['position_ids'][0, :] + prefix_length])
+        full_position_ids = np.concatenate([np.arange(0, prefix_length, dtype=int), glm_example['position_ids'][0, :] + prefix_length])
         full_block_ids = np.concatenate([[0]*prefix_length, glm_example['position_ids'][1, :]])
         edit_label_ids = [self.edit_label_map[item] for item in edit_labels]
         return {
@@ -300,6 +302,7 @@ class GLMDataProcessor:
             'position_ids': np.stack([full_position_ids, full_block_ids], axis=0),
             'source_length': glm_example['source_length'] + prefix_length,
             'prefix_length': prefix_length,
+            'prefix_prompt_length': len(self.detection_prefix_tokens),
         }
 
     def convert_gec_sentence_pair_to_example(self, src: str, tgt: str, max_sentence_length: int = 100):
@@ -318,14 +321,13 @@ class GLMDataProcessor:
             'target_ids': np.array([], dtype=int), 
             'position_ids': np.array([[],[]], dtype=int),
             'source_length': 0,
-            'prefix_length': 0,
         }
         infer_example = self.add_detection_prefix(temp_example, src_tokens=src_tokens, edit_labels=[self.keep_label]*len(src_tokens))
         return infer_example
 
-    def convert_detected_sentence_to_infer_example(self, src: str, edit_label_ids: List[int]):
+    def convert_detected_sentence_to_infer_example(self, src_tokens: List[int], edit_label_ids: List[int]):
         edit_labels = [self.edit_label_id_map[item] for item in edit_label_ids]
-        src_tokens = self.edit_extractor.split_sentence(src)
+        # src_tokens = self.edit_extractor.split_sentence(src)
         example = self.from_edit_label_to_glm_infer_example(edit_labels=edit_labels, src_tokens=src_tokens)
         infer_example = self.add_detection_prefix(example, src_tokens=src_tokens, edit_labels=edit_labels)
         return infer_example
@@ -348,7 +350,7 @@ if __name__ == "__main__":
     config = Config()
 
     dataprocess = GLMDataProcessor(tokenizer=tokenizer, args=None, config=config)
-    src_t, tgt_t, edits = dataprocess.edit_extractor.limited_split_sentence(src, tgt, dataprocess.text_cut)
+    src_t, tgt_t, edits = dataprocess.edit_extractor.limited_split_sentence(src, tgt, config.text_cut)
     res = dataprocess.convert_gec_sentence_pair_to_example(src, tgt)
     print(res)
 

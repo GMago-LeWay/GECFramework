@@ -340,11 +340,11 @@ class ExperimentsOfGECBeta:
             trainer.load(self.args.load)
         best_score = trainer.do_train()
         # save result
-        logger.info(get_time() + '本次最优结果：%.4f' % best_score)
-        # do test
-        trainer.load(self.args.save_dir)
-        test_results = trainer.do_test()
-        return test_results
+        logger.info(get_time() + 'Result：%s' % best_score)
+        # # do test
+        # trainer.load(self.args.save_dir)
+        # test_results = trainer.do_test()
+        return best_score
 
     def run_infer(self, config):
         # only inferring
@@ -359,8 +359,9 @@ class ExperimentsOfGECBeta:
         model_to_be_init = get_model(model=self.args.model)
         model = model_to_be_init(self.args, config)
         train_to_be_init = get_train(model=self.args.model)
-        trainer: TrainerBeta = train_to_be_init(args=self.args, config=config, model=model, dataset=raw_dataset)
+        trainer: TrainerBeta = train_to_be_init(args=self.args, settings=config, model=model, dataset=raw_dataset)
         trainer.load(self.args.load)
+        logger.info(f"Load Checkpoint from {self.args.load}")
         json_results = trainer.do_infer()
         prediction_saving(args=self.args, json_results=json_results)
         

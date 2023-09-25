@@ -165,13 +165,42 @@ def split_test_data_to_new_dataset(dataset_dir='../datasets/FangZhengSpell', new
     print(description)
     print(f"Save to {new_dataset_dir}")
 
+from utils.ChERRANT.parallel_to_m2 import to_m2
+
+def cherrant_gold_labels(dataset_dir='', seed=20):
+    setup_seed(seed=seed)
+    save_dir = os.path.join(dataset_dir, 'ChERRANT')
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    train_json = os.path.join(dataset_dir, 'train.json')
+    valid_json = os.path.join(dataset_dir, 'valid.json')
+    train_data = json.load(open(train_json))
+    valid_data = json.load(open(valid_json))
+
+    def convert_data_to_m2(data):
+        src_tgt_texts = [[item['text'], item['label']] for item in data]
+        res = to_m2(
+            ids=[item['id'] for item in data] if 'id' in data[0] else list(range(len(src_tgt_texts))),
+            src_tgt_texts=src_tgt_texts,
+        )
+        return res
+    
+    train_labels = convert_data_to_m2(train_data)
+    for i in range(len(train_data)):
+        train_labels[i]['text'] = train_data[i]['text']
+        train_labels[i]['label'] = train_data[i]['label']
+    json.dump(train_labels, open(os.path.join(save_dir, 'train.json'), 'w'), ensure_ascii=False, indent=4)
+
+    valid_labels = convert_data_to_m2(valid_data)
+    for i in range(len(valid_data)):
+        valid_labels[i]['text'] = valid_data[i]['text']
+        valid_labels[i]['label'] = valid_data[i]['label']
+    json.dump(valid_labels, open(os.path.join(save_dir, 'valid.json'), 'w'), ensure_ascii=False, indent=4)
 
 if __name__ == "__main__":
     # setup_seed(111)
     # preprocess_stgjoint('mucgec')
     # preprocess_seq2edit('augment')
-    convert_fcgec_seq2seq()
-    prepocess_mucgec()
     # process_gector_multi_append_data('fcgec')
     # split_data('augment')
 
@@ -179,3 +208,8 @@ if __name__ == "__main__":
     # split_test_data_to_new_dataset('../datasets/FangZhengSpell', '../datasets/FangZhengSpellv3', 1/3)
     # split_test_data_to_new_dataset('../datasets/FangZhengGrammar', '../datasets/FangZhengGrammarv2', 1/2)
     # split_test_data_to_new_dataset('../datasets/FangZhengGrammar', '../datasets/FangZhengGrammarv3', 1/3)
+
+    # convert_fcgec_seq2seq()
+    # prepocess_mucgec()
+    
+    cherrant_gold_labels(dataset_dir='../datasets/PreTrainSet')

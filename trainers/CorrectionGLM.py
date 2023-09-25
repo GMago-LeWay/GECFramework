@@ -2,152 +2,40 @@ from typing import Optional, Union
 from tqdm import tqdm
 import os
 import logging
+import json
 import numpy as np
 import torch
+import torch.nn.functional as F
+from torch.utils.data.dataloader import DataLoader
+import datasets
+import transformers
 from dataclasses import dataclass, field
 from transformers import (
     AutoConfig,
     AutoTokenizer,
+    AutoModelForSeq2SeqLM,
     HfArgumentParser,
     Trainer,
     TrainingArguments,
+    BatchEncoding,
     default_data_collator,
     set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
+import evaluate
 
 from trainers.base import TrainerBeta
 from dataset_provider.CorrectionGLM import GLMDataProcessor
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class ModelArguments:
-    """
-    Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
-    """
-    # model_name_or_path: str = field(
-    #     default=None, metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
-    # )
-    # ptuning_checkpoint: str = field(
-    #     default=None, metadata={"help": "Path to p-tuning v2 checkpoints"}
-    # )
-    # config_name: Optional[str] = field(
-    #     default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
-    # )
-    # tokenizer_name: Optional[str] = field(
-    #     default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
-    # )
-    cache_dir: Optional[str] = field(
-        default=None,
-        metadata={"help": "Where to store the pretrained models downloaded from huggingface.co"},
-    )
-    use_fast_tokenizer: bool = field(
-        default=True,
-        metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
-    )
-    resize_position_embeddings: Optional[bool] = field(
-        default=None,
-        metadata={
-            "help": (
-                "Whether to automatically resize the position embeddings if `max_source_length` exceeds "
-                "the model's position embeddings."
-            )
-        },
-    )
-    quantization_bit: Optional[int] = field(
-        default=None
-    )
-
-
-@dataclass
-class DataTrainingArguments:
-    """
-    Arguments pertaining to what data we are going to input our model for training and eval.
-    """
-    overwrite_cache: bool = field(
-        default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
-    )
-    preprocessing_num_workers: Optional[int] = field(
-        default=None,
-        metadata={"help": "The number of processes to use for the preprocessing."},
-    )
-    # max_source_length: Optional[int] = field(
-    #     default=128,
-    #     metadata={
-    #         "help": (
-    #             "The maximum total input sequence length after tokenization. Sequences longer "
-    #             "than this will be truncated, sequences shorter will be padded."
-    #         )
-    #     },
-    # )
-    # max_target_length: Optional[int] = field(
-    #     default=32,
-    #     metadata={
-    #         "help": (
-    #             "The maximum total sequence length for target text after tokenization. Sequences longer "
-    #             "than this will be truncated, sequences shorter will be padded."
-    #         )
-    #     },
-    # )
-    max_train_samples: Optional[int] = field(
-        default=None,
-        metadata={
-            "help": (
-                "For debugging purposes or quicker training, truncate the number of training examples to this "
-                "value if set."
-            )
-        },
-    )
-    max_eval_samples: Optional[int] = field(
-        default=None,
-        metadata={
-            "help": (
-                "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
-                "value if set."
-            )
-        },
-    )
-    max_predict_samples: Optional[int] = field(
-        default=None,
-        metadata={
-            "help": (
-                "For debugging purposes or quicker training, truncate the number of prediction examples to this "
-                "value if set."
-            )
-        },
-    )
-    # ignore_pad_token_for_loss: bool = field(
-    #     default=True,
-    #     metadata={
-    #         "help": "Whether to ignore the tokens corresponding to padded labels in the loss computation or not."
-    #     },
-    # )
-
+accuracy_metric = evaluate.load("accuracy")
+transformers.utils.move_cache('/data/liwei/cache/huggingface/')
 
 @dataclass
 class DataCollatorForGLMGEC:
-    """
-    Data collator that will dynamically pad the inputs.
-    Candidate masks will be computed to indicate which tokens are candidates.
-
-    Args:
-        tokenizer ([`PreTrainedTokenizer`] or [`PreTrainedTokenizerFast`]):
-            The tokenizer used for encoding the data.
-        padding (`bool`, `str` or [`~utils.PaddingStrategy`], *optional*, defaults to `True`):
-            Select a strategy to pad the returned sequences (according to the model's padding side and padding index)
-            among:
-
-            - `True` or `'longest'`: Pad to the longest sequence in the batch (or no padding if only a single sequence
-              if provided).
-            - `'max_length'`: Pad to a maximum length specified with the argument `max_length` or to the maximum
-              acceptable input length for the model if that argument is not provided.
-            - `False` or `'do_not_pad'` (default): No padding (i.e., can output a batch with sequences of different
-              lengths).
-    """
 
     tokenizer: AutoTokenizer
-    padding: Union[bool, str] = True
     loss_ignore_id: int = -100
 
     def __call__(self, features):
@@ -183,7 +71,7 @@ class DataCollatorForGLMGEC:
             batch_attention_masks.append(pad_attention_mask)
 
         # batch encoding
-        batch = {
+        batch = BatchEncoding({
             'input_ids': torch.LongTensor(batch_input_ids),
             'target_ids': torch.LongTensor(batch_target_ids),
             'position_ids': torch.LongTensor(batch_position_ids),
@@ -191,8 +79,64 @@ class DataCollatorForGLMGEC:
             'attention_mask': torch.LongTensor(np.array(batch_attention_masks)).unsqueeze(1),
             'source_length': torch.LongTensor([item['source_length'] for item in features]),
             'prefix_length': torch.LongTensor([item['prefix_length'] for item in features]),
-        }
+            'prefix_prompt_length': torch.LongTensor([item['prefix_prompt_length'] for item in features])
+        })
         return batch
+
+CN_MARKER_MAP = {
+    ',': '，',
+    ';': '；',
+    ':': '：',
+    '(': '（',
+    ')': '）',
+    '?': '？',
+    '!': '！',
+}
+
+
+def postprocess_cn(result: str):
+    for key in CN_MARKER_MAP:
+        result = result.replace(key, CN_MARKER_MAP[key])
+    return result
+
+
+def compute_metrics(eval_predictions):
+    pred_ids, label_ids = eval_predictions.predictions, eval_predictions.label_ids
+    glm_pred_ids, detection_pred_ids = pred_ids[0]
+    glm_labels, detection_labels = label_ids
+
+    glm_pred_ids, detection_pred_ids, glm_labels, detection_labels = glm_pred_ids.ravel(), detection_pred_ids.ravel(), glm_labels.ravel(), detection_labels.ravel()
+
+    glm_pred_weights = (1 - (glm_labels == -100)*1).ravel()
+    detection_pred_weights = (1 - (detection_labels == -100)*1).ravel()
+    keep_pred_weights = ((detection_labels==0)*1).ravel()
+    error_pred_weights = ((detection_labels==1)*1).ravel()
+    insert_pred_weights = ((detection_labels==2)*1).ravel()
+    glm_accuracy = accuracy_metric.compute(references=glm_labels, predictions=glm_pred_ids, sample_weight=glm_pred_weights)['accuracy']
+    detection_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=detection_pred_weights)['accuracy']
+    keep_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=keep_pred_weights)['accuracy']
+    error_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=error_pred_weights)['accuracy']
+    insert_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=insert_pred_weights)['accuracy']
+    geometric_accuracy = (glm_accuracy*detection_accuracy)**0.5
+    detection_geometric_accuracy = ( keep_accuracy*error_accuracy*insert_accuracy ) ** (1/3)
+    general_accuary = (glm_accuracy*detection_geometric_accuracy)**0.5
+
+    return {'general_accuracy': general_accuary, 
+            'geometric_accuracy': geometric_accuracy, 
+            'glm_accuracy': glm_accuracy, 'detection_accuracy': detection_accuracy, 
+            'detection_geometric_accuracy': detection_geometric_accuracy,
+            'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy, 'insert_accuracy': insert_accuracy}
+
+
+def preprocess_logits_for_metrics(logits, labels):
+    """
+    Original Trainer may have a memory leak. 
+    This is a workaround to avoid storing too many tensors that are not needed.
+    """
+    lm_logits, detection_logits = logits
+    detection_pred = torch.argmax(detection_logits, dim=-1)
+    glm_pred = torch.argmax(lm_logits, dim=-1)
+    return (glm_pred, detection_pred), labels
 
 
 class CorrectionGLMTrainer(TrainerBeta):
@@ -202,62 +146,50 @@ class CorrectionGLMTrainer(TrainerBeta):
         # dataset processor
         self.tokenizer = AutoTokenizer.from_pretrained(self.settings.pretrained_model, trust_remote_code=True)
         self.data_processor = GLMDataProcessor(tokenizer=self.tokenizer, args=args, config=settings)
-        self.data_collator = DataCollatorForGLMGEC(tokenizer=self.tokenizer, padding=True, loss_ignore_id=self.data_processor._loss_ignore_id)
-        self.marker_map = {
-            ',': '，',
-            ';': '；',
-            ':': '：',
-            '(': '（',
-            ')': '）',
-            '?': '？',
-            '!': '！',
-        }
+        self.data_collator = DataCollatorForGLMGEC(tokenizer=self.tokenizer, loss_ignore_id=self.data_processor._loss_ignore_id)
+        # self.generation_data_collator = DataCollatorForGLMGECGeneration(tokenizer=self.tokenizer, loss_ignore_id=self.data_processor._loss_ignore_id)
 
-        # some config
-        self.text_cut = self.settings.text_cut
+        # data config
+        self.overwrite_cache = False
 
-        # initialize config for transformers
-        self.args_list = [
-            '--do_train',
-            '--do_eval',
-            # '--do_predict',
-            '--output_dir', args.save_dir,
-            '--remove_unused_columns', False,
-            '--per_device_train_batch_size', str(settings.batch_size),
-            '--per_device_eval_batch_size', str(settings.batch_size),
-            '--overwrite_output_dir',
-            # '--max_source_length', '100',
-            '--seed', str(args.seed),
-            '--num_train_epochs', str(settings.epoch),
-            # '--evaluation_strategy', 'epoch',
-            '--eval_steps', str(settings.eval_step),
-            # '--save_strategy', settings.save_strategy,
-            '--save_steps', str(settings.eval_step),
-            '--logging_steps', str(settings.logging_steps),
-            '--learning_rate', str(settings.lr),
-            # '--fp16',
-            # '--predict_with_generate',
-            # '--group_by_length',
-            '--gradient_accumulation_steps', str(settings.gradient_accumulation_steps),
-            '--warmup_steps', str(settings.warmup_steps),
-            '--weight_decay', str(settings.weight_decay),
-            '--lr_scheduler', settings.lr_scheduler,
-        ]
-        parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
-        self.model_args, self.data_args, self.training_args = parser.parse_args_into_dataclasses(self.args_list)
-        logger.info(self.model_args)
-        logger.info(self.data_args)
+        # initialize config for transformers trainer
+        self.training_args = TrainingArguments(
+            seed=args.seed,
+            do_train=True,
+            do_eval=True,
+            do_predict=False,
+            output_dir=args.save_dir,
+            overwrite_output_dir=True,
+            remove_unused_columns=False,
+            # include_inputs_for_metrics=True,
+            label_names=['target_ids', 'detection_labels'],
+            per_device_train_batch_size=settings.train_batch_size,
+            per_device_eval_batch_size=settings.eval_batch_size,
+            num_train_epochs=settings.epoch,
+            evaluation_strategy='steps',
+            eval_steps=settings.eval_step,
+            # eval_accumulation_steps=20,
+            save_steps=settings.save_step,
+            logging_steps=settings.logging_steps,
+            # log_level='info',
+            learning_rate=settings.lr,
+            fp16=False,
+            group_by_length=False,
+            gradient_accumulation_steps=settings.gradient_accumulation_steps,
+            warmup_steps=settings.warmup_steps,
+            weight_decay=settings.weight_decay,
+            # lr_scheduler_type=settings.lr_scheduler,
+            metric_for_best_model='eval_general_accuracy',
+        )
         logger.info(self.training_args)
     
     def _get_train_preprocess_function(self, for_validation=False):
         def _preprocess(examples):
             processed = {}
             for i in range(len(examples['text'])):
-                if for_validation:
-                    src, tgt = examples['text'][i], examples['label'][i]
-                else:
-                    src, tgt = examples['text'][i][:self.text_cut], examples['label'][i][:self.text_cut]
-                result = self.data_processor.convert_gec_sentence_pair_to_example(src, tgt, 512 if for_validation else self.text_cut)
+                src, tgt = examples['text'][i], examples['label'][i]
+                result = self.data_processor.convert_gec_sentence_pair_to_example(src, tgt, 
+                            self.settings.max_eval_source_length if for_validation else self.settings.max_train_source_length)
                 if not processed:
                     for key in result:
                         processed[key] = []
@@ -309,7 +241,8 @@ class CorrectionGLMTrainer(TrainerBeta):
             self._get_train_preprocess_function(for_validation=False),
             batched=True,
             remove_columns=removed_columns,
-            load_from_cache_file=not self.data_args.overwrite_cache,
+            load_from_cache_file=not self.overwrite_cache,
+            # cache_file_name=os.path.join(self.settings.cache_dir, 'train_dataset.cache'),
             desc="Running preprocessing on train dataset",
         )
 
@@ -317,23 +250,20 @@ class CorrectionGLMTrainer(TrainerBeta):
             self._get_train_preprocess_function(for_validation=True),
             batched=True,
             remove_columns=removed_columns,
-            load_from_cache_file=not self.data_args.overwrite_cache,
+            load_from_cache_file=not self.overwrite_cache,
+            # cache_file_name=os.path.join(self.settings.cache_dir, 'valid_dataset.cache'),
             desc="Running preprocessing on valid dataset"
         )
 
+    def test_dataset_transform(self):
         self.test_dataset = self.dataset['test'].map(
             self._get_detection_preprocess_function(),
             batched=True,
             remove_columns=[],
-            load_from_cache_file=not self.data_args.overwrite_cache,
+            load_from_cache_file=not self.overwrite_cache,
+            # cache_file_name=os.path.join(self.settings.cache_dir, 'test_dataset.cache'),
             desc="Running detection preprocessing on test dataset"
         )
-
-    def _get_metrics_compute_function(self):
-        def metrics(eval_predictions):
-            print(eval_predictions)
-            return {'loss': eval_predictions['loss']}
-        return metrics
 
     def do_train(self):
         """
@@ -347,6 +277,8 @@ class CorrectionGLMTrainer(TrainerBeta):
         # set logger
         log_level = self.training_args.get_process_log_level()
         logger.setLevel(log_level)
+        datasets.utils.logging.set_verbosity(log_level)
+        transformers.utils.logging.set_verbosity(log_level)
         logger.warning(
             f"Process rank: {self.training_args.local_rank}, device: {self.training_args.device}, n_gpu: {self.training_args.n_gpu}\n"
             + f"distributed training: {bool(self.training_args.local_rank != -1)}, 16-bits training: {self.training_args.fp16}"
@@ -376,8 +308,12 @@ class CorrectionGLMTrainer(TrainerBeta):
             eval_dataset=self.valid_dataset if self.training_args.do_eval else None,
             tokenizer=self.tokenizer,
             data_collator=self.data_collator,
-            # compute_metrics=self._get_metrics_compute_function(),
+            compute_metrics=compute_metrics,
+            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
+        # # for i, batch in enumerate(trainer.get_eval_dataloader()):
+        # #     print(i, batch['input_ids'].size())
+        # metrics = trainer.evaluate()
         if training_args.do_train:
             checkpoint = None
             if training_args.resume_from_checkpoint is not None:
@@ -391,6 +327,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             trainer.log_metrics("train", metrics)
             trainer.save_metrics("train", metrics)
             trainer.save_state()
+            self.save(save_dir=self.args.save_dir)
 
         # # Test
         # if training_args.do_eval:
@@ -408,15 +345,164 @@ class CorrectionGLMTrainer(TrainerBeta):
         do test process on labeled dataset.
         """
         raise NotImplementedError()
+    
+    def construct_inference_model(self, model_file):
+        del self.model
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(self.settings.pretrained_model, trust_remote_code=True)
+        match_information = self.model.load_state_dict(torch.load(model_file), strict=False)
+        logger.info(f"load checkpoint from {model_file}, with {match_information}")
+
 
     def do_infer(self):
         """
         do infer on inputs.
         """
-        raise NotImplementedError()
+        ## detection
+        self.test_dataset_transform()
+        self.model.to(self.args.device)
+        self.model.eval()
+        test_data_loader = DataLoader(self.test_dataset, batch_size=32, collate_fn=self.data_collator)
+        edit_label_predictions = []
+        logger.info("Error Detection:")
+        for test_data in tqdm(test_data_loader):
+            test_data.to(self.args.device)
+            detection_logits = self.model(**test_data).logits[1]
+            detection_predictions = detection_logits.argmax(-1).tolist()
+            prefix_length = test_data['prefix_length'].tolist()
+            prefix_prompt_length = test_data['prefix_prompt_length'].tolist()
+            batch_size = len(prefix_length)
+            edit_label_predictions.extend([detection_predictions[i][prefix_prompt_length[i]:prefix_length[i]] for i in range(batch_size)])
+        self.test_dataset = self.test_dataset.add_column('detection_predictions', edit_label_predictions)
+
+        def _transform_to_predict_first_phase(examples):
+            processed = {}
+            for i in range(len(examples['input_ids'])):
+                src_tokens = examples['input_ids'][i][examples['prefix_prompt_length'][i]:examples['prefix_length'][i]]
+                result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, examples['detection_predictions'][i])
+                if not processed:
+                    for key in result:
+                        processed[key] = []
+                for key in result:
+                    processed[key].append(result[key])
+            return processed
+        
+        logger.info("Using Detection results to generate dataset for mask generation:")
+        logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.save_dir}")
+        self.construct_inference_model(os.path.join(self.args.load, 'pytorch_model.bin'))
+        self.model.to(self.args.device)
+        self.model.eval()
+
+        # test_dataset_for_generation = self.test_dataset.map(
+        #     _transform_to_predict_first_phase,
+        #     batched=True,
+        #     remove_columns=[],
+        #     load_from_cache_file=not self.overwrite_cache,
+        #     desc="Running first generation preprocessing on test dataset"
+        # )
+        test_dataset_for_generation = []
+        reserved_columns = ['id', 'text', 'label']
+        for i, item in tqdm(enumerate(self.test_dataset)):
+            src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
+            result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, item['detection_predictions'])
+            for key in reserved_columns:
+                if key in item:
+                    result[key] = item[key]
+            test_dataset_for_generation.append(result)
+
+        max_gen_len = self.settings.max_new_tokens
+
+        ## save result one by one
+        f = open(os.path.join(self.args.save_dir, 'real-time-results.json'), 'w')
+        results = []
+
+        logging.info("GLM model do the generation:")
+        for test_data in tqdm(test_dataset_for_generation):
+            mask_positions = []
+            for i, id in enumerate(test_data['input_ids']):
+                if id == self.tokenizer.mask_token_id:
+                    mask_positions.append(i)
+            while (test_data['input_ids'] == self.tokenizer.mask_token_id).sum() != (test_data['input_ids'] == self.tokenizer.eop_token_id).sum():
+                input_ids_length = len(test_data['input_ids'])
+                input_ids = torch.LongTensor(test_data['input_ids']).to(self.args.device).unsqueeze(0)
+                current_len = len(test_data['input_ids']) 
+                pad_position_ids = list(test_data['position_ids'][0]) + [test_data['position_ids'][0][-1]]*max_gen_len
+                pad_block_ids = list(test_data['position_ids'][1]) + list(range(test_data['position_ids'][1][-1]+1, test_data['position_ids'][1][-1]+max_gen_len+1))
+                position_ids = torch.stack([torch.LongTensor(pad_position_ids), torch.LongTensor(pad_block_ids)]).to(self.args.device).unsqueeze(0)
+                attention_mask = np.tril(np.ones((current_len+max_gen_len, current_len+max_gen_len), dtype=int))
+                attention_mask[:test_data['prefix_length'], :test_data['prefix_length']] = 1
+                attention_mask[test_data['prefix_length']:test_data['source_length'], :test_data['source_length']] = 1
+                attention_mask = torch.LongTensor(attention_mask).to(self.args.device).unsqueeze(0).unsqueeze(0)
+                outputs = self.model.generate(
+                    input_ids=input_ids, position_ids=position_ids, generation_attention_mask=attention_mask,
+                    max_new_tokens=max_gen_len, 
+                    eos_token_id=self.tokenizer.eop_token_id,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                )
+                new_input_ids = list(test_data['input_ids']) + outputs[0].tolist()[input_ids_length:]
+                if new_input_ids[-1] != self.tokenizer.eop_token_id:
+                    new_input_ids.append(self.tokenizer.eop_token_id)
+                new_input_len = len(new_input_ids)
+                new_position_ids = pad_position_ids[:new_input_len]
+                new_block_ids = pad_block_ids[:new_input_len]
+                if new_input_ids.count(self.tokenizer.mask_token_id) != new_input_ids.count(self.tokenizer.eop_token_id):
+                    new_input_ids.append(self.tokenizer.sop_token_id)
+                    new_position_ids.append(mask_positions[new_input_ids.count(self.tokenizer.eop_token_id)])
+                    new_block_ids.append(1)
+                test_data['input_ids'] = np.array(new_input_ids, dtype=int)
+                test_data['position_ids'] = np.array([new_position_ids, new_block_ids], dtype=int)
+
+            # end generation
+            # mask position replace
+            generation_part = list(test_data['input_ids'][test_data['source_length']:])
+            source_part = list(test_data['input_ids'][test_data['prefix_length']:test_data['source_length']])
+            while source_part.count(self.tokenizer.mask_token_id) > 0:
+                first_mask_pos = source_part.index(self.tokenizer.mask_token_id)
+                first_sop_pos = generation_part.index(self.tokenizer.sop_token_id)
+                first_eop_pos = generation_part.index(self.tokenizer.eop_token_id)
+                source_part = source_part[:first_mask_pos] + generation_part[first_sop_pos+1: first_eop_pos] + source_part[first_mask_pos+1:]
+                generation_part = generation_part[first_eop_pos+1:]
+            
+            # post process
+            generation_res = self.tokenizer.decode(source_part, skip_special_tokens=True)
+            if self.settings.chinese_marker_substitution:
+                generation_res = postprocess_cn(generation_res)
+            
+            if 'label' in test_data:
+                res = {'id':test_data['id'], 'src': test_data['text'], 'tgt': test_data['label'], 'predict': generation_res}
+            else:
+                res = {'id':test_data['id'], 'src': test_data['text'], 'predict': generation_res}
+            results.append(res)
+            f.write(json.dumps(res, ensure_ascii=False) + '\n')
+
+        f.close()
+
+        return results
 
     def save(self, save_dir):
-        raise NotImplementedError()
+        if self.args.task_mode == 'train':
+            logger.info("Saving manual training settings in config.py...")
+            config_file = os.path.join(save_dir, 'presettings.json')
+            config_dict = {}
+            for key in self.settings:
+                config_dict[key] = str(self.settings[key])
+            json.dump(open(config_file, 'w'), self.settings, indent=4, ensure_ascii=False)
+        else:    
+            raise NotImplementedError()
 
     def load(self, save_dir):
-        raise NotImplementedError()
+        if self.args.task_mode == 'train':
+            raise NotImplementedError()
+        else:
+            if save_dir[-1] == '/':
+                save_dir = save_dir[:-1]
+            checkpoint_root_dir =  os.path.dirname(save_dir)
+            config_file = os.path.join(checkpoint_root_dir, 'presettings.json')
+            logger.info(f"Load manual training settings in checkpoint, include {self.settings.load_config_keys}, from {config_file}")
+            presettings = json.load(open(config_file))
+            for key in self.settings.load_config_keys:
+                self.settings[key] = presettings[key]
+            
+            logger.info("Load complete model for CorrectionGLM.")
+            path = os.path.join(save_dir, 'pytorch_model.bin')
+            self.model.load_state_dict(torch.load(path))
+            

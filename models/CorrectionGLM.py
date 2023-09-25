@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 import logging
 from peft import  PeftModel
 from transformers import AutoConfig, AutoTokenizer
@@ -23,7 +24,66 @@ class StoppingCriteriaSub(StoppingCriteria):
         if stop_count >= self.ENCOUNTERS:
             return True
         return False
-    
+
+
+class MultiFocalLoss(torch.nn.Module):
+    """
+    Focal_Loss= -1*alpha*((1-pt)**gamma)*log(pt)
+    Args:
+        num_class: number of classes
+        alpha: class balance factor shape=[num_class, ]
+        gamma: hyper-parameter
+        reduction: reduction type
+    """
+
+    def __init__(self, num_class, alpha=None, gamma=2, reduction='mean', dtype=torch.float32, ignore_id=-100):
+        super(MultiFocalLoss, self).__init__()
+        self.num_class = num_class
+        self.ignore_id = ignore_id
+        self.reduction = reduction
+        self.smooth = 1e-4
+        self.gamma = gamma
+        self.alpha = alpha
+        self.average_eps = 1.
+        if alpha is None:
+            self.alpha = torch.ones(num_class, dtype=dtype) - 0.5
+        elif isinstance(alpha, (int, float)):
+            self.alpha = torch.as_tensor([alpha] * num_class, dtype=dtype)
+        elif isinstance(alpha, (list, np.ndarray)):
+            self.alpha = torch.as_tensor(alpha, dtype=dtype)
+        if self.alpha.shape[0] != num_class:
+            raise RuntimeError('the length not equal to number of class')
+
+    def forward(self, logit, target):
+        # assert isinstance(self.alpha,torch.Tensor)\
+        '''
+        logit: [SEQ_LENGTH, N_CLASSES]
+        target: [SEQ_LENGTH]
+        '''
+        # probability transform
+        prob = F.softmax(logit, dim=-1)
+        ori_shp = target.shape
+        target = target.view(-1, 1)
+
+        ignore_mask = (target == self.ignore_id) * 1
+        temp_target = target - ignore_mask*self.ignore_id    # convert ignore_id position with 0
+
+        prob = prob.gather(1, temp_target).view(-1) + self.smooth  # avoid nan
+        logpt = torch.log(prob)
+        # alpha_class = alpha.gather(0, target.squeeze(-1))
+        alpha = self.alpha.to(device=temp_target.device)
+        alpha_weight = alpha[temp_target.squeeze().long()]
+        loss = -alpha_weight * torch.pow(torch.sub(1.0, prob), self.gamma) * logpt
+        loss_mask =  (1.-ignore_mask).squeeze(-1)
+        loss = loss * loss_mask
+
+        if self.reduction == 'mean':
+            loss = loss.sum() / (self.average_eps + loss_mask.sum())
+        elif self.reduction == 'none':
+            loss = loss.view(ori_shp)
+
+        return loss
+
 
 class GLMForGrammaticalCorrection(GLMPreTrainedModel):
     def __init__(self, args, settings):
@@ -43,7 +103,7 @@ class GLMForGrammaticalCorrection(GLMPreTrainedModel):
         self.pool_token = config.pool_token
         self.glm = GLMModel.from_pretrained(
             settings.pretrained_model, 
-            trust_remote_code=True,
+            # trust_remote_code=True,
             torch_dtype=settings.torch_dtype,
         )
         if settings.lora_model is not None:
@@ -57,8 +117,9 @@ class GLMForGrammaticalCorrection(GLMPreTrainedModel):
         # GLM Loss
         self.glm_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction='mean')
         # Labeling Loss
-        self.labeling_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction='mean')
-
+        # self.labeling_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction='mean')
+        self.labeling_loss = MultiFocalLoss(num_class=settings.num_labels, alpha=[1,2,2], gamma=2, 
+                                            reduction='mean', dtype=settings.torch_dtype, ignore_id=settings.loss_ignore_id)
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -80,8 +141,7 @@ class GLMForGrammaticalCorrection(GLMPreTrainedModel):
         detection_loss = self.labeling_loss(logits.view(-1, self.settings.num_labels), detection_labels.view(-1))
         lm_loss = self.glm_loss(lm_logits.view(-1, lm_logits.shape[-1]), target_ids.view(-1))
         loss = lm_loss + self.settings.detection_loss_weight * detection_loss
-        return ModelOutput(loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
-                        logits=logits,
-                        lm_logits=lm_logits,
-                        hidden_states=outputs)
-
+        return ModelOutput(
+            loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
+            logits=(lm_logits, logits),
+        )

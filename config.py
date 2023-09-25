@@ -458,21 +458,21 @@ class Config:
 
             # pretrained model
             'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'chatglm2-6b'),
-            'lora_model': None,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'Llama2-Chinese-7b-Chat'),
+            'lora_model': '/home/liwei/workspace/Llama2-Chinese/train/sft/llama2_mucgec_edit/checkpoint-6000',
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
 
             # model config
             'torch_dtype': torch.float16,
             'load_in_8bit': False,
             'generation_config': dict(
-                temperature=0.2,
-                top_k=10,
-                top_p=0.95,
-                do_sample=True,
-                num_beams=1,
+                # temperature=0.2,
+                # top_k=10,
+                # top_p=0.95,
+                # do_sample=True,
+                # num_beams=1,
                 repetition_penalty=1.3,
-                max_new_tokens=512,
+                max_new_tokens=128,
             ),
 
             # fixed parameters
@@ -483,10 +483,10 @@ class Config:
             # evaluation config
             'chinese_marker_substitution': False,
 
-            'prompt': '<s>Human: 请修正以下句子中的语法和拼写错误，给出正确的语句；如果没有错误，请直接输出原语句：\n[text]\n</s><s>',         # [text] for substitution.
+            'prompt': '<s>Human: 请对以下句子中可能存在的语法错误进行逐步修改: \n[text]\n</s><s>',         # [text] for substitution.
             'final_prompt': 'Assistant：',   # Used for segmentation.
-            'max_len_prop': 1.8,
-            'min_len_prop': 0.6,
+            'max_len_prop': 2.0,
+            'min_len_prop': 0.0,
 
         }
 
@@ -785,33 +785,39 @@ class Config:
             'logging_steps': 10,
 
             # parameters that are able to be tuned
-            'detection_loss_weight': 2,
-            'gradient_accumulation_steps': 4,
+            'prompt': '',
+            'detection_loss_weight': 3,
+            'gradient_accumulation_steps': 8,
             'lr': 2e-5,
             'weight_decay': 1e-4,
-            'epoch': 10,
-            'warmup_steps': 50,
+            'epoch': 2,
+            'warmup_steps': 1000,
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
 
             # data process parameters
-            'text_cut': 100,
-            'batch_size': 32,
+            'max_train_source_length': 100,
+            'max_eval_source_length': 256,
+            'train_batch_size': 16,
+            'eval_batch_size': 8,
 
             # evaluation config
-            'eval_step': 300,        # steps interval of evaluation, None: 1eval/epoch   
+            'eval_step': 2500,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 10000,  
 
             # inference config
-            'chinese_marker_substitution': False,
-            'generation_config': dict(
-                temperature=0.2,
-                top_k=10,
-                top_p=0.95,
-                do_sample=True,
-                num_beams=1,
-                repetition_penalty=1.3,
-                max_new_tokens=512,
-            ),
+            'load_config_keys': ['prompt'],
+            'chinese_marker_substitution': True,
+            # 'generation_config': dict(
+            #     temperature=0.2,
+            #     top_k=10,
+            #     top_p=0.95,
+            #     do_sample=True,
+            #     num_beams=1,
+            #     repetition_penalty=1.3,
+            #     max_new_tokens=512,
+            # ),
+            'max_new_tokens': 10,
 
         }
 
