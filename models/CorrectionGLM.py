@@ -98,7 +98,8 @@ class GLMForGrammaticalCorrection(GLMPreTrainedModel):
         self.args = args
         self.config = config
         self.settings = settings
-        self.n_gpu = len(self.args.devices.split(',')) 
+        self.n_gpu = len(self.args.devices.split(','))
+        self.loss_detach = settings.loss_detach
         # Load GLM Model
         self.pool_token = config.pool_token
         self.glm = GLMModel.from_pretrained(
@@ -118,7 +119,7 @@ class GLMForGrammaticalCorrection(GLMPreTrainedModel):
         self.glm_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction='mean')
         # Labeling Loss
         # self.labeling_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction='mean')
-        self.labeling_loss = MultiFocalLoss(num_class=settings.num_labels, alpha=[1,2,2], gamma=2, 
+        self.labeling_loss = MultiFocalLoss(num_class=settings.num_labels, alpha=settings.alpha, gamma=2, 
                                             reduction='mean', dtype=settings.torch_dtype, ignore_id=settings.loss_ignore_id)
         # Initialize weights and apply final processing
         self.post_init()
@@ -133,8 +134,9 @@ class GLMForGrammaticalCorrection(GLMPreTrainedModel):
 
         model_out = self.glm(input_ids, position_ids, attention_mask)
         outputs, lm_logits = model_out.last_hidden_states, model_out.logits
-
         output_for_detection = self.dropout(outputs)
+        if self.loss_detach:
+            output_for_detection = output_for_detection.detach()
         output_for_detection = torch.tanh(self.dense(output_for_detection))
         output_for_detection = self.dropout(output_for_detection)
         logits = self.out_proj(output_for_detection)

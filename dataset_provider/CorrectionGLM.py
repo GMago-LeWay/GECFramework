@@ -31,7 +31,7 @@ def index_in_list(lst, val, start=None):
 
 
 class TokenizerBasedTextEditProcessor:
-    def __init__(self, tokenizer) -> None:
+    def __init__(self, tokenizer, without_insert=False) -> None:
         self.tokenizer = tokenizer
         self.keep_label = '$KEEP'
         self.insert_label = '$INSERT' # Notice that 'insert' means insertion AFTER the current token
@@ -46,6 +46,7 @@ class TokenizerBasedTextEditProcessor:
             1: self.error_label,
             2: self.insert_label,
         }
+        self.without_insert = without_insert
         # self.delete_label = '$DELETE'
         # self.replace_label = '$REPLACE'
         self.marker1 = ['。', '？', '！', '；', '…', '?', '!', '.', '\n']
@@ -65,8 +66,11 @@ class TokenizerBasedTextEditProcessor:
         '''
         src_tokens = self.split_sentence(src)
         tgt_tokens = self.split_sentence(tgt)
-        r = SequenceMatcher(None, src_tokens, tgt_tokens)
-        diffs = r.get_opcodes()
+        if self.without_insert:
+            diffs = self.align_without_insert(src_tokens=src_tokens, tgt_tokens=tgt_tokens)
+        else:
+            r = SequenceMatcher(None, src_tokens, tgt_tokens)
+            diffs = r.get_opcodes()
 
         # did not reach limit length
         if len(src_tokens) <= length and len(tgt_tokens) <= length:
@@ -111,13 +115,53 @@ class TokenizerBasedTextEditProcessor:
         edit_diffs = [diff for diff in new_diffs if diff[0] in ['replace', 'insert', 'delete']]
         return src_tokens + [self.tokenizer.eos_token_id], tgt_tokens + [self.tokenizer.eos_token_id], edit_diffs
 
+    def align_without_insert(self, src_tokens: List[int], tgt_tokens: List[int]) -> List[Tuple[str, int, int, int, int]]:
+        '''
+        Extract edit list for source text transforming to target text. for insert (src_idx, src_idx, tgt_idx1, tgt_idx2), turn to ()
+        (src_idx_start, src_idx_end, tgt_idx_start, tgt_idx_end)
+        '''
+        r = SequenceMatcher(None, src_tokens, tgt_tokens)
+        diffs = r.get_opcodes()
+        diff_processed_flag = [False]*len(diffs)    # avoid repeat edit
+        edits = []
+        assert diffs[0][0] == 'equal', "Required item at start is 'equal'."
+        for i in range(len(diffs)-1, -1, -1):
+            diff = diffs[i]
+            if diff_processed_flag[i]:
+                continue
+            if diff[0] in ['replace', 'delete', 'equal']:
+                edits.append(diff)
+                continue
+            assert diff[0] == 'insert', "Other unlegalled label exists."
+            assert diffs[i-1][0] == 'equal', "Matcher should have merge adjacent edits. Please check"
+            if diffs[i-1][2] - diffs[i-1][1] == 1:      # last equal span length==1
+                if i-2>=0:   # merge two aligned spans
+                    assert diffs[i-2][0] != 'equal' 
+                    edits.append(('replace', diffs[i-2][1], diffs[i][2], diffs[i-2][3], diffs[i][4]))
+                    diff_processed_flag[i-1] = True
+                    diff_processed_flag[i-2] = True
+                else:    # there is no more prefix edit
+                    edits.append(('replace', diffs[i-1][1], diffs[i][2], diffs[i-1][3], diffs[i][4]))
+                    diff_processed_flag[i-1] = True
+            else:                                       # last span length > 1
+                # expand edit alignment by 1
+                edits.append(('replace', diffs[i][1]-1, diffs[i][2], diffs[i][3]-1, diffs[i][4]))
+                edits.append(('equal', diffs[i-1][1], diffs[i-1][2]-1, diffs[i-1][3], diffs[i-1][4]-1))
+                diff_processed_flag[i-1] = True
+
+        edits.reverse()
+        return edits
+
     def edit(self, src_tokens: List[int], tgt_tokens: List[int]) -> List[Tuple[str, int, int, int, int]]:
         '''
         Extract edit list for source text transforming to target text.
         (src_idx_start, src_idx_end, tgt_idx_start, tgt_idx_end)
         '''
-        r = SequenceMatcher(None, src_tokens, tgt_tokens)
-        diffs = r.get_opcodes()
+        if self.without_insert:
+            diffs = self.align_without_insert(src_tokens=src_tokens, tgt_tokens=tgt_tokens)
+        else:
+            r = SequenceMatcher(None, src_tokens, tgt_tokens)
+            diffs = r.get_opcodes()
         
         return [diff for diff in diffs if diff[0] in ['replace', 'insert', 'delete']]
     
@@ -129,8 +173,8 @@ class TokenizerBasedTextEditProcessor:
         labels = [self.keep_label] * len(src_tokens)
         for edit in edits:
             _, i1, i2, j1, j2 = edit
-            assert i1>0
             if i1==i2:     # insert [j1, j2) at i1
+                assert i1>0, f"{i1} {i2}, {j1} {j2}"
                 labels[i1-1] = self.insert_label
             else:  # i1<i2
                 for i in range(i1, i2):
@@ -142,7 +186,12 @@ class GLMDataProcessor:
     def __init__(self, tokenizer, args, config) -> None:
         self.tokenizer = tokenizer
         # .sop_token/.eop_token/.sop_token_id/.eop_token_id
-        self.edit_extractor = TokenizerBasedTextEditProcessor(self.tokenizer)
+        assert config.num_labels in [2, 3]
+        if config.num_labels == 2:
+            self.without_insert = True
+        else:
+            self.without_insert = False
+        self.edit_extractor = TokenizerBasedTextEditProcessor(self.tokenizer, without_insert=self.without_insert)
         self.args = args
         self.config = config
         # edit settings
@@ -187,9 +236,10 @@ class GLMDataProcessor:
         mask_id = self.tokenizer.mask_token_id
         for _, src_start, src_end, tgt_start, tgt_end in edits:
             # local_spans.append((current_length, current_length + start - last))
-            source_tokens.append(original_tgt_tokens[last: tgt_start])
+            if last != tgt_start:
+                source_tokens.append(original_tgt_tokens[last: tgt_start])
+                source_position_ids.append(position_ids[last: tgt_start])
             source_tokens.append([mask_id])
-            source_position_ids.append(position_ids[last: tgt_start])
             if tgt_start == tgt_end: # DELETE operation position, reserved position id
                 source_position_ids.append([position_ids[tgt_start]-1])
             else:
@@ -295,10 +345,12 @@ class GLMDataProcessor:
         full_position_ids = np.concatenate([np.arange(0, prefix_length, dtype=int), glm_example['position_ids'][0, :] + prefix_length])
         full_block_ids = np.concatenate([[0]*prefix_length, glm_example['position_ids'][1, :]])
         edit_label_ids = [self.edit_label_map[item] for item in edit_labels]
+        if self.without_insert:
+            assert max(edit_label_ids) <= 1
         return {
             'input_ids': full_src_tokens,
             'target_ids': full_target_tokens,
-            'detection_labels': [self._loss_ignore_id]*len(self.detection_prefix_tokens) + edit_label_ids + [self._loss_ignore_id]*len(glm_example['input_ids']),
+            'detection_labels': np.array([self._loss_ignore_id]*len(self.detection_prefix_tokens) + edit_label_ids + [self._loss_ignore_id]*len(glm_example['input_ids']), dtype=int),
             'position_ids': np.stack([full_position_ids, full_block_ids], axis=0),
             'source_length': glm_example['source_length'] + prefix_length,
             'prefix_length': prefix_length,
@@ -312,6 +364,8 @@ class GLMDataProcessor:
         edit_labels = self.edit_extractor.edit_labels(edits=edits, src_tokens=src_tokens, tgt_tokens=tgt_tokens)
         example = self.from_edit_to_glm_example(edits=edits, original_src_tokens=src_tokens, original_tgt_tokens=tgt_tokens)
         train_example = self.add_detection_prefix(example, src_tokens=src_tokens, edit_labels=edit_labels)
+        assert train_example['input_ids'].dtype == train_example['input_ids'].dtype == train_example['detection_labels'].dtype == train_example['position_ids'].dtype == int
+        assert type(train_example['source_length']) == type(train_example['prefix_length']) == type(train_example['prefix_prompt_length']) == int
         return train_example
     
     def convert_sentence_to_detection_example(self, src: str):
@@ -347,10 +401,18 @@ if __name__ == "__main__":
 
     class Config:
         text_cut=15
+        num_labels=2
+        prompt='请改正下面的句子中的语法错误：'
     config = Config()
 
     dataprocess = GLMDataProcessor(tokenizer=tokenizer, args=None, config=config)
     src_t, tgt_t, edits = dataprocess.edit_extractor.limited_split_sentence(src, tgt, config.text_cut)
+    res = dataprocess.convert_gec_sentence_pair_to_example(src, tgt)
+    print(res)
+
+    src = "虽然很客气，但我并不会这样做。尤其是他是美丽的？"
+    tgt = "我本人虽然很客气的人，但我并不会像他这样去做一件事。尤其是它是美丽的传说？"
+
     res = dataprocess.convert_gec_sentence_pair_to_example(src, tgt)
     print(res)
 

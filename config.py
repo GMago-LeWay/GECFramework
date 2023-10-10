@@ -778,35 +778,39 @@ class Config:
             'torch_dtype': torch.float32,
             'load_in_8bit': False,
             'loss_ignore_id': -100,
+            'loss_detach': False,
 
             # fixed parameters
-            'num_labels': 3,    # detection label num
+            'num_labels': 2,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
             'output_dropout_prob': 0.2,        # detection head dropout
             'logging_steps': 10,
 
             # parameters that are able to be tuned
             'prompt': '',
-            'detection_loss_weight': 3,
-            'gradient_accumulation_steps': 8,
+            'detection_loss_weight': 5,
+            'gradient_accumulation_steps': 4,
             'lr': 2e-5,
             'weight_decay': 1e-4,
-            'epoch': 2,
-            'warmup_steps': 1000,
+            'epoch': 5,
+            'warmup_steps': 100,
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
+            'alpha': [1,2],  # [1,2,2], or [1,2]
 
             # data process parameters
+            'cache_dir': '/data/liwei/cache',
             'max_train_source_length': 100,
             'max_eval_source_length': 256,
             'train_batch_size': 16,
             'eval_batch_size': 8,
 
             # evaluation config
-            'eval_step': 2500,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 10000,  
+            'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 4000,  
 
             # inference config
-            'load_config_keys': ['prompt'],
+            'load_config_keys': ['prompt', 'num_labels'],
+            'keep_threshold': None,
             'chinese_marker_substitution': True,
             # 'generation_config': dict(
             #     temperature=0.2,

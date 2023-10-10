@@ -29,7 +29,7 @@ from dataset_provider.CorrectionGLM import GLMDataProcessor
 
 logger = logging.getLogger(__name__)
 
-accuracy_metric = evaluate.load("accuracy")
+accuracy_metric = evaluate.load("utils/accuracy")
 transformers.utils.move_cache('/data/liwei/cache/huggingface/')
 
 @dataclass
@@ -100,7 +100,34 @@ def postprocess_cn(result: str):
     return result
 
 
-def compute_metrics(eval_predictions):
+# TODO: 2 class metrics
+def compute_metrics_2_label(eval_predictions):
+    pred_ids, label_ids = eval_predictions.predictions, eval_predictions.label_ids
+    glm_pred_ids, detection_pred_ids = pred_ids[0]
+    glm_labels, detection_labels = label_ids
+
+    glm_pred_ids, detection_pred_ids, glm_labels, detection_labels = glm_pred_ids.ravel(), detection_pred_ids.ravel(), glm_labels.ravel(), detection_labels.ravel()
+
+    glm_pred_weights = (1 - (glm_labels == -100)*1).ravel()
+    detection_pred_weights = (1 - (detection_labels == -100)*1).ravel()
+    keep_pred_weights = ((detection_labels==0)*1).ravel()
+    error_pred_weights = ((detection_labels==1)*1).ravel()
+    glm_accuracy = accuracy_metric.compute(references=glm_labels, predictions=glm_pred_ids, sample_weight=glm_pred_weights)['accuracy']
+    detection_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=detection_pred_weights)['accuracy']
+    keep_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=keep_pred_weights)['accuracy']
+    error_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=error_pred_weights)['accuracy']
+    geometric_accuracy = (glm_accuracy*detection_accuracy)**0.5
+    detection_geometric_accuracy = ( keep_accuracy*error_accuracy ) ** (1/2)
+    general_accuary = (glm_accuracy*detection_geometric_accuracy)**0.5
+
+    return {'general_accuracy': general_accuary, 
+            'geometric_accuracy': geometric_accuracy, 
+            'glm_accuracy': glm_accuracy, 'detection_accuracy': detection_accuracy, 
+            'detection_geometric_accuracy': detection_geometric_accuracy,
+            'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy}
+
+
+def compute_metrics_3_label(eval_predictions):
     pred_ids, label_ids = eval_predictions.predictions, eval_predictions.label_ids
     glm_pred_ids, detection_pred_ids = pred_ids[0]
     glm_labels, detection_labels = label_ids
@@ -242,7 +269,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             batched=True,
             remove_columns=removed_columns,
             load_from_cache_file=not self.overwrite_cache,
-            # cache_file_name=os.path.join(self.settings.cache_dir, 'train_dataset.cache'),
+            # cache_file_name=os.path.join(self.settings.cache_dir, 'train_dataset.arrow'),
             desc="Running preprocessing on train dataset",
         )
 
@@ -255,8 +282,9 @@ class CorrectionGLMTrainer(TrainerBeta):
             desc="Running preprocessing on valid dataset"
         )
 
-    def test_dataset_transform(self):
-        self.test_dataset = self.dataset['test'].map(
+    def test_dataset_transform(self, use_valid_set_as_test=False):
+        dataset_key = 'valid' if use_valid_set_as_test else 'test'
+        self.test_dataset = self.dataset[dataset_key].map(
             self._get_detection_preprocess_function(),
             batched=True,
             remove_columns=[],
@@ -308,7 +336,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             eval_dataset=self.valid_dataset if self.training_args.do_eval else None,
             tokenizer=self.tokenizer,
             data_collator=self.data_collator,
-            compute_metrics=compute_metrics,
+            compute_metrics=compute_metrics_3_label if self.settings.num_labels==3 else compute_metrics_2_label,
             preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
         # # for i, batch in enumerate(trainer.get_eval_dataloader()):
@@ -320,6 +348,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                 checkpoint = training_args.resume_from_checkpoint
             elif last_checkpoint is not None:
                 checkpoint = last_checkpoint
+            self.save(save_dir=self.args.save_dir)
             train_result = trainer.train(resume_from_checkpoint=checkpoint)
             trainer.save_model()  # Saves the tokenizer too for easy upload
             metrics = train_result.metrics
@@ -364,27 +393,32 @@ class CorrectionGLMTrainer(TrainerBeta):
         test_data_loader = DataLoader(self.test_dataset, batch_size=32, collate_fn=self.data_collator)
         edit_label_predictions = []
         logger.info("Error Detection:")
+        keep_label_id = self.data_processor.edit_label_map['$KEEP']
         for test_data in tqdm(test_data_loader):
             test_data.to(self.args.device)
             detection_logits = self.model(**test_data).logits[1]
-            detection_predictions = detection_logits.argmax(-1).tolist()
+            detection_probs = F.softmax(detection_logits, -1)
+            if self.settings.keep_threshold:
+                keep_mask = (detection_probs[:, :, keep_label_id] > self.settings.keep_threshold)*1.
+                detection_probs[:, :, keep_label_id] = keep_mask
+            detection_predictions = detection_probs.argmax(-1).tolist()
             prefix_length = test_data['prefix_length'].tolist()
             prefix_prompt_length = test_data['prefix_prompt_length'].tolist()
             batch_size = len(prefix_length)
             edit_label_predictions.extend([detection_predictions[i][prefix_prompt_length[i]:prefix_length[i]] for i in range(batch_size)])
         self.test_dataset = self.test_dataset.add_column('detection_predictions', edit_label_predictions)
 
-        def _transform_to_predict_first_phase(examples):
-            processed = {}
-            for i in range(len(examples['input_ids'])):
-                src_tokens = examples['input_ids'][i][examples['prefix_prompt_length'][i]:examples['prefix_length'][i]]
-                result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, examples['detection_predictions'][i])
-                if not processed:
-                    for key in result:
-                        processed[key] = []
-                for key in result:
-                    processed[key].append(result[key])
-            return processed
+        # def _transform_to_predict_first_phase(examples):
+        #     processed = {}
+        #     for i in range(len(examples['input_ids'])):
+        #         src_tokens = examples['input_ids'][i][examples['prefix_prompt_length'][i]:examples['prefix_length'][i]]
+        #         result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, examples['detection_predictions'][i])
+        #         if not processed:
+        #             for key in result:
+        #                 processed[key] = []
+        #         for key in result:
+        #             processed[key].append(result[key])
+        #     return processed
         
         logger.info("Using Detection results to generate dataset for mask generation:")
         logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.save_dir}")
@@ -478,20 +512,152 @@ class CorrectionGLMTrainer(TrainerBeta):
 
         return results
 
+    def do_eval(self):
+        """
+        do infer on eval dataset and output midium ponents.
+        """
+        ## detection
+        self.test_dataset_transform(use_valid_set_as_test=True)
+        self.model.to(self.args.device)
+        self.model.eval()
+        test_data_loader = DataLoader(self.test_dataset, batch_size=32, collate_fn=self.data_collator)
+        edit_label_predictions = []
+        logger.info("Error Detection:")
+        keep_label_id = self.data_processor.edit_label_map['$KEEP']
+        for test_data in tqdm(test_data_loader):
+            test_data.to(self.args.device)
+            detection_logits = self.model(**test_data).logits[1]
+            detection_probs = F.softmax(detection_logits, -1)
+            if self.settings.keep_threshold:
+                keep_mask = (detection_probs[:, :, keep_label_id] > self.settings.keep_threshold)*1.
+                detection_probs[:, :, keep_label_id] = keep_mask
+            detection_predictions = detection_probs.argmax(-1).tolist()
+            prefix_length = test_data['prefix_length'].tolist()
+            prefix_prompt_length = test_data['prefix_prompt_length'].tolist()
+            batch_size = len(prefix_length)
+            edit_label_predictions.extend([detection_predictions[i][prefix_prompt_length[i]:prefix_length[i]] for i in range(batch_size)])
+        self.test_dataset = self.test_dataset.add_column('detection_predictions', edit_label_predictions)
+        
+        logger.info("Using Detection results to generate dataset for mask generation:")
+        logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.save_dir}")
+        self.construct_inference_model(os.path.join(self.args.load, 'pytorch_model.bin'))
+        self.model.to(self.args.device)
+        self.model.eval()
+
+        # test_dataset_for_generation = self.test_dataset.map(
+        #     _transform_to_predict_first_phase,
+        #     batched=True,
+        #     remove_columns=[],
+        #     load_from_cache_file=not self.overwrite_cache,
+        #     desc="Running first generation preprocessing on test dataset"
+        # )
+        test_dataset_for_generation = []
+        reserved_columns = ['id', 'text', 'label']
+        for i, item in tqdm(enumerate(self.test_dataset)):
+            src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
+            result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, item['detection_predictions'])
+            for key in reserved_columns:
+                if key in item:
+                    result[key] = item[key]
+            test_dataset_for_generation.append(result)
+
+        max_gen_len = self.settings.max_new_tokens
+
+        ## save result one by one
+        f = open(os.path.join(self.args.save_dir, 'real-time-results.json'), 'w')
+        results = []
+
+        logging.info("GLM model do the generation:")
+        for i, test_data in tqdm(enumerate(test_dataset_for_generation)):
+            mask_positions = []
+            original_item = self.test_dataset[i]
+            src_tokens = original_item['input_ids'][original_item['prefix_prompt_length']:original_item['prefix_length']]
+            detections = original_item['detection_predictions']
+            for i, id in enumerate(test_data['input_ids']):
+                if id == self.tokenizer.mask_token_id:
+                    mask_positions.append(i)
+            while (test_data['input_ids'] == self.tokenizer.mask_token_id).sum() != (test_data['input_ids'] == self.tokenizer.eop_token_id).sum():
+                input_ids_length = len(test_data['input_ids'])
+                input_ids = torch.LongTensor(test_data['input_ids']).to(self.args.device).unsqueeze(0)
+                current_len = len(test_data['input_ids']) 
+                pad_position_ids = list(test_data['position_ids'][0]) + [test_data['position_ids'][0][-1]]*max_gen_len
+                pad_block_ids = list(test_data['position_ids'][1]) + list(range(test_data['position_ids'][1][-1]+1, test_data['position_ids'][1][-1]+max_gen_len+1))
+                position_ids = torch.stack([torch.LongTensor(pad_position_ids), torch.LongTensor(pad_block_ids)]).to(self.args.device).unsqueeze(0)
+                attention_mask = np.tril(np.ones((current_len+max_gen_len, current_len+max_gen_len), dtype=int))
+                attention_mask[:test_data['prefix_length'], :test_data['prefix_length']] = 1
+                attention_mask[test_data['prefix_length']:test_data['source_length'], :test_data['source_length']] = 1
+                attention_mask = torch.LongTensor(attention_mask).to(self.args.device).unsqueeze(0).unsqueeze(0)
+                outputs = self.model.generate(
+                    input_ids=input_ids, position_ids=position_ids, generation_attention_mask=attention_mask,
+                    max_new_tokens=max_gen_len, 
+                    eos_token_id=self.tokenizer.eop_token_id,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                )
+                new_input_ids = list(test_data['input_ids']) + outputs[0].tolist()[input_ids_length:]
+                if new_input_ids[-1] != self.tokenizer.eop_token_id:
+                    new_input_ids.append(self.tokenizer.eop_token_id)
+                new_input_len = len(new_input_ids)
+                new_position_ids = pad_position_ids[:new_input_len]
+                new_block_ids = pad_block_ids[:new_input_len]
+                if new_input_ids.count(self.tokenizer.mask_token_id) != new_input_ids.count(self.tokenizer.eop_token_id):
+                    new_input_ids.append(self.tokenizer.sop_token_id)
+                    new_position_ids.append(mask_positions[new_input_ids.count(self.tokenizer.eop_token_id)])
+                    new_block_ids.append(1)
+                test_data['input_ids'] = np.array(new_input_ids, dtype=int)
+                test_data['position_ids'] = np.array([new_position_ids, new_block_ids], dtype=int)
+
+            # end generation
+            # mask position replace
+            generation_part = list(test_data['input_ids'][test_data['source_length']:])
+            source_part = list(test_data['input_ids'][test_data['prefix_length']:test_data['source_length']])
+            while source_part.count(self.tokenizer.mask_token_id) > 0:
+                first_mask_pos = source_part.index(self.tokenizer.mask_token_id)
+                first_sop_pos = generation_part.index(self.tokenizer.sop_token_id)
+                first_eop_pos = generation_part.index(self.tokenizer.eop_token_id)
+                source_part = source_part[:first_mask_pos] + generation_part[first_sop_pos+1: first_eop_pos] + source_part[first_mask_pos+1:]
+                generation_part = generation_part[first_eop_pos+1:]
+            
+            # post process
+            generation_res = self.tokenizer.decode(source_part, skip_special_tokens=True)
+            if self.settings.chinese_marker_substitution:
+                generation_res = postprocess_cn(generation_res)
+            
+            assert 'label' in test_data, "Validation set without targets(labels)"
+            res = {
+                'id':test_data['id'], 'src': test_data['text'], 'tgt': test_data['label'], 'predict': generation_res,
+                'src_tokens': self.tokenizer.convert_ids_to_tokens(src_tokens),
+                'detections': [self.data_processor.edit_label_id_map[i] for i in detections],
+                'predict_tokens': self.tokenizer.convert_ids_to_tokens(source_part),
+            }
+            if 'other_labels' in test_data:
+                res['other_labels'] = test_data['other_labels']
+            results.append(res)
+            f.write(json.dumps(res, ensure_ascii=False) + '\n')
+
+        f.close()
+
+        return results
+
     def save(self, save_dir):
         if self.args.task_mode == 'train':
             logger.info("Saving manual training settings in config.py...")
             config_file = os.path.join(save_dir, 'presettings.json')
             config_dict = {}
             for key in self.settings:
-                config_dict[key] = str(self.settings[key])
-            json.dump(open(config_file, 'w'), self.settings, indent=4, ensure_ascii=False)
+                content = self.settings[key]
+                if type(content) in [str, int, float, bool]:
+                    config_dict[key] = content
+                else:
+                    config_dict[key] = str(content)
+            json.dump(config_dict, open(config_file, 'w'), indent=4, ensure_ascii=False)
         else:    
             raise NotImplementedError()
 
     def load(self, save_dir):
         if self.args.task_mode == 'train':
-            raise NotImplementedError()
+            logger.info("Load complete model for CorrectionGLM to continue training.")
+            path = os.path.join(save_dir, 'pytorch_model.bin')
+            self.model.load_state_dict(torch.load(path))
         else:
             if save_dir[-1] == '/':
                 save_dir = save_dir[:-1]

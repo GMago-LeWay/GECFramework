@@ -25,7 +25,7 @@ def parse_args():
                         help='train/tune/test/infer/augmentation')  
     parser.add_argument('--dataset', type=str, default='fcgec',
                         help='hybridset/nlpcc2018task2/fangzhengspell/fangzhenggrammar/guangming/peopledaily/augment/fangzhengaugment/fangzhengdapei/fcgec/mucgec')  
-    parser.add_argument('--pre_save_dir', type=str, default='results',
+    parser.add_argument('--pre_save_dir', type=str, default='glm_results',
                         help='root path to save results.')
     parser.add_argument('--devices', type=str, default='0,1',
                         help='GPU Environment.')    
@@ -43,6 +43,7 @@ def parse_args():
 ## Set devices before pytorch imported
 args = parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = args.devices
+os.environ["HF_DATASETS_CACHE"] = "/data/liwei/cache/"
 logger = logging.getLogger(__name__)
 
 import matplotlib.pyplot as plt
@@ -86,14 +87,18 @@ def setup_log(args):
         logger.addHandler(stream_handler)
 
 
-def prediction_saving(args, json_results):
-    """
-    In infer task, some dataset requires a specific version of results to evaluate, this function will do the formatting.
-    """
+def basic_saving(args, json_results):
     save_path = os.path.join(args.save_dir, f'{args.model}-{args.dataset}-{args.task_mode}.json')
     with codecs.open(save_path, "w", "utf-8") as f:
         json.dump(json_results, f, ensure_ascii=False, indent=4)
     logger.info(get_time() + f"Results have been stored in {save_path}.")
+
+
+def prediction_saving(args, json_results):
+    """
+    In infer task, some dataset requires a specific version of results to evaluate, this function will do the formatting.
+    """
+    basic_saving(args, json_results)
 
     ## MuCGEC output
     if args.dataset == 'mucgec':
@@ -352,7 +357,13 @@ class ExperimentsOfGECBeta:
 
         # data settings
         raw_dataset_loader: TransformersDataset = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
-        raw_dataset = raw_dataset_loader.get_dataset_map(split='test')
+        if self.args.task_mode == 'infer':
+            load_key = 'test'
+        elif self.args.task_mode == 'eval':
+            load_key = 'valid'
+        else:
+            raise NotImplementedError()
+        raw_dataset = raw_dataset_loader.get_dataset_map(split=load_key)
         logger.info(get_time() + f"Infer: Use model {config.name} at {self.args.load}, on dataset {self.args.dataset}")
         logger.info(f"Args: {self.args}; Config: {config}")
         # model settings
@@ -362,15 +373,21 @@ class ExperimentsOfGECBeta:
         trainer: TrainerBeta = train_to_be_init(args=self.args, settings=config, model=model, dataset=raw_dataset)
         trainer.load(self.args.load)
         logger.info(f"Load Checkpoint from {self.args.load}")
-        json_results = trainer.do_infer()
-        prediction_saving(args=self.args, json_results=json_results)
+        if self.args.task_mode == 'infer':
+            json_results = trainer.do_infer()
+            prediction_saving(args=self.args, json_results=json_results)
+        elif self.args.task_mode == 'eval':
+            json_results = trainer.do_eval()
+            basic_saving(args=self.args, json_results=json_results)
+        else:
+            raise NotImplementedError()
         
         return json_results
 
     def conduct(self):
         preset_config = {}
 
-        if self.args.task_mode == 'infer':
+        if self.args.task_mode == 'infer' or self.args.task_mode == 'eval':
             config = Config(model=self.args.model, dataset=self.args.dataset, preconfig=preset_config).get_config()
             self.run_infer(config=config)                
         elif self.args.task_mode == 'train':
@@ -508,7 +525,7 @@ if __name__ == '__main__':
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
     setup_log(args)
-    if args.task_mode in ['train', 'tune', 'test', 'infer']:
+    if args.task_mode in ['train', 'tune', 'test', 'infer', 'eval']:
         experiment = EXPERIMENTS[args.model](args)
         experiment.conduct()
     elif args.task_mode in ['augmentation']:
