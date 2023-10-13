@@ -781,21 +781,21 @@ class Config:
             'loss_detach': False,
 
             # fixed parameters
-            'num_labels': 2,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
+            'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
             'output_dropout_prob': 0.2,        # detection head dropout
             'logging_steps': 10,
 
             # parameters that are able to be tuned
             'prompt': '',
-            'detection_loss_weight': 5,
-            'gradient_accumulation_steps': 4,
+            'detection_loss_weight': 2,
+            'gradient_accumulation_steps': 8,
             'lr': 2e-5,
             'weight_decay': 1e-4,
-            'epoch': 5,
-            'warmup_steps': 100,
+            'epoch': 2,
+            'warmup_steps': 1000,
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
-            'alpha': [1,2],  # [1,2,2], or [1,2]
+            'alpha': [1,2,2],  # [1,2,2], or [1,2]
 
             # data process parameters
             'cache_dir': '/data/liwei/cache',
@@ -805,11 +805,11 @@ class Config:
             'eval_batch_size': 8,
 
             # evaluation config
-            'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 4000,  
+            'eval_step': 2500,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 10000,  
 
             # inference config
-            'load_config_keys': ['prompt', 'num_labels'],
+            'load_config_keys': ['prompt', 'num_labels', 'alpha'],
             'keep_threshold': None,
             'chinese_marker_substitution': True,
             # 'generation_config': dict(

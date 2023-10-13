@@ -645,10 +645,15 @@ class CorrectionGLMTrainer(TrainerBeta):
             config_dict = {}
             for key in self.settings:
                 content = self.settings[key]
-                if type(content) in [str, int, float, bool]:
+                if type(content) in [str, int, float, bool, list]:
                     config_dict[key] = content
                 else:
                     config_dict[key] = str(content)
+            config_dict['model'] = self.args.model
+            config_dict['dataset'] = self.args.dataset
+            config_dict['task_mode'] = self.args.task_mode
+            config_dict['load'] = self.args.load
+
             json.dump(config_dict, open(config_file, 'w'), indent=4, ensure_ascii=False)
         else:    
             raise NotImplementedError()
