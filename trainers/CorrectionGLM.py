@@ -390,7 +390,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         self.test_dataset_transform()
         self.model.to(self.args.device)
         self.model.eval()
-        test_data_loader = DataLoader(self.test_dataset, batch_size=32, collate_fn=self.data_collator)
+        test_data_loader = DataLoader(self.test_dataset, batch_size=self.settings.detection_batch_size, collate_fn=self.data_collator)
         edit_label_predictions = []
         logger.info("Error Detection:")
         keep_label_id = self.data_processor.edit_label_map['$KEEP']
@@ -520,7 +520,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         self.test_dataset_transform(use_valid_set_as_test=True)
         self.model.to(self.args.device)
         self.model.eval()
-        test_data_loader = DataLoader(self.test_dataset, batch_size=32, collate_fn=self.data_collator)
+        test_data_loader = DataLoader(self.test_dataset, batch_size=self.settings.detection_batch_size, collate_fn=self.data_collator)
         edit_label_predictions = []
         logger.info("Error Detection:")
         keep_label_id = self.data_processor.edit_label_map['$KEEP']
@@ -658,7 +658,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         else:    
             raise NotImplementedError()
 
-    def load(self, save_dir):
+    def load(self, save_dir: str):
         if self.args.task_mode == 'train':
             logger.info("Load complete model for CorrectionGLM to continue training.")
             path = os.path.join(save_dir, 'pytorch_model.bin')
@@ -666,7 +666,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         else:
             if save_dir[-1] == '/':
                 save_dir = save_dir[:-1]
-            checkpoint_root_dir =  os.path.dirname(save_dir)
+            checkpoint_root_dir =  os.path.dirname(save_dir) if save_dir.find('checkpoint') != -1 else save_dir
             config_file = os.path.join(checkpoint_root_dir, 'presettings.json')
             logger.info(f"Load manual training settings in checkpoint, include {self.settings.load_config_keys}, from {config_file}")
             presettings = json.load(open(config_file))

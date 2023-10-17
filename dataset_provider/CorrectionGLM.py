@@ -7,6 +7,7 @@ import math
 from scipy.stats import poisson
 from difflib import SequenceMatcher
 from typing import Dict, List, Tuple
+from transformers import AutoTokenizer, AutoConfig
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,8 +32,9 @@ def index_in_list(lst, val, start=None):
 
 
 class TokenizerBasedTextEditProcessor:
-    def __init__(self, tokenizer, without_insert=False) -> None:
+    def __init__(self, tokenizer, without_insert=False, max_sequence_length=None) -> None:
         self.tokenizer = tokenizer
+        self.max_sequence_length = max_sequence_length
         self.keep_label = '$KEEP'
         self.insert_label = '$INSERT' # Notice that 'insert' means insertion AFTER the current token
         self.error_label = '$ERROR'
@@ -54,11 +56,18 @@ class TokenizerBasedTextEditProcessor:
         self.marker1_ids = self.tokenizer.convert_tokens_to_ids(self.marker1)
         self.marker2_ids = self.tokenizer.convert_tokens_to_ids(self.marker2)
 
-    def split_sentence(self, sentence: str) -> List[int]:
+    def split_sentence(self, sentence: str, max_sentence_length: int = None) -> List[int]:
         '''
         Use tokenizer to split sentence into a list of tokens
         '''
-        return self.tokenizer.encode(sentence)
+        if max_sentence_length is None:
+            if self.max_sequence_length:
+                max_sentence_length = self.max_sequence_length // 3
+        tokens = self.tokenizer.encode(sentence)
+        if max_sentence_length < len(tokens):
+            return tokens[:max_sentence_length-1] + tokens[-1:]
+        else:
+            return tokens
     
     def limited_split_sentence(self, src: str, tgt: str, length: int) -> Tuple[List[int], List[int], Tuple[str, int, int, int, int]]:
         '''
@@ -185,13 +194,15 @@ class TokenizerBasedTextEditProcessor:
 class GLMDataProcessor:
     def __init__(self, tokenizer, args, config) -> None:
         self.tokenizer = tokenizer
+        self.model_config = AutoConfig.from_pretrained(config.pretrained_model, trust_remote_code=True)
+        self.max_length = self.model_config.max_sequence_length
         # .sop_token/.eop_token/.sop_token_id/.eop_token_id
         assert config.num_labels in [2, 3]
         if config.num_labels == 2:
             self.without_insert = True
         else:
             self.without_insert = False
-        self.edit_extractor = TokenizerBasedTextEditProcessor(self.tokenizer, without_insert=self.without_insert)
+        self.edit_extractor = TokenizerBasedTextEditProcessor(self.tokenizer, without_insert=self.without_insert, max_sequence_length=self.max_length)
         self.args = args
         self.config = config
         # edit settings
@@ -368,8 +379,8 @@ class GLMDataProcessor:
         assert type(train_example['source_length']) == type(train_example['prefix_length']) == type(train_example['prefix_prompt_length']) == int
         return train_example
     
-    def convert_sentence_to_detection_example(self, src: str):
-        src_tokens = self.edit_extractor.split_sentence(src)
+    def convert_sentence_to_detection_example(self, src: str, max_sentence_length: int = None):
+        src_tokens = self.edit_extractor.split_sentence(src, max_sentence_length=max_sentence_length)
         temp_example = {
             'input_ids': np.array([], dtype=int), 
             'target_ids': np.array([], dtype=int), 
@@ -390,6 +401,7 @@ class GLMDataProcessor:
 if __name__ == "__main__":
     from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
     tokenizer = AutoTokenizer.from_pretrained("../models/glm-large-chinese", trust_remote_code=True)
+    model_config = AutoConfig.from_pretrained("../models/glm-large-chinese", trust_remote_code=True)
 
     # Inference
     inputs = tokenizer("Ng is an adjunct professor at [MASK] (formerly associate professor and Director of its Stanford AI Lab or SAIL ). Also a [MASK] in online education, Ng co-founded Coursera and deeplearning.ai.", return_tensors="pt")

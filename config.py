@@ -787,7 +787,7 @@ class Config:
 
             # parameters that are able to be tuned
             'prompt': '',
-            'detection_loss_weight': 2,
+            'detection_loss_weight': 3,
             'gradient_accumulation_steps': 8,
             'lr': 2e-5,
             'weight_decay': 1e-4,
@@ -799,10 +799,11 @@ class Config:
 
             # data process parameters
             'cache_dir': '/data/liwei/cache',
-            'max_train_source_length': 100,
+            'max_train_source_length': 128,
             'max_eval_source_length': 256,
-            'train_batch_size': 16,
+            'train_batch_size': 12,
             'eval_batch_size': 8,
+            'detection_batch_size': 8,
 
             # evaluation config
             'eval_step': 2500,        # steps interval of evaluation, None: 1eval/epoch 

@@ -6,7 +6,7 @@
 tqdm
 matplotlib
 pandas
-transformers
+transformers==4.33.1
 spacy
 # in some case, the language model in spacy must be downloaded
 bs4
@@ -17,6 +17,7 @@ jieba
 rouge
 sentencepiece
 opencc
+evaluate
 
 # GECToR need ...
 tensorboard
@@ -26,18 +27,18 @@ scikit-learn
 # Causal LM need ...
 # pytorch >= 1.13.0
 peft
-gptq
+# gptq
 # if load_in_8bit
-bitsandbytes
+# bitsandbytes
 
 # others
-xpinyin
-pypinyin
-synonyms
-Levenshtein
-allennlp
-overrides
-chardet
-cchardet
-pyllama
-thulac
+# xpinyin
+# pypinyin
+# synonyms
+# Levenshtein
+# allennlp
+# overrides
+# chardet
+# cchardet
+# pyllama
+# thulac

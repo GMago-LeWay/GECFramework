@@ -91,6 +91,14 @@ def basic_saving(args, json_results):
     save_path = os.path.join(args.save_dir, f'{args.model}-{args.dataset}-{args.task_mode}.json')
     with codecs.open(save_path, "w", "utf-8") as f:
         json.dump(json_results, f, ensure_ascii=False, indent=4)
+
+    save_txt = os.path.join(args.save_dir, f'{args.model}-{args.dataset}-{args.task_mode}.txt')
+    with codecs.open(save_txt, "w", "utf-8") as f:
+        for item in json_results:
+            if "tgt" in item:
+                f.write("%s\t%s\t%s\n" % (item["src"], item["tgt"], item["predict"]))
+            else:
+                f.write("%s\t%s\n" % (item["src"], item["predict"]))
     logger.info(get_time() + f"Results have been stored in {save_path}.")
 
 
