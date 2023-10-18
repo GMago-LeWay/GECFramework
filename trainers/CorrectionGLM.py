@@ -3,6 +3,7 @@ from tqdm import tqdm
 import os
 import logging
 import json
+import copy
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -421,7 +422,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         #     return processed
         
         logger.info("Using Detection results to generate dataset for mask generation:")
-        logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.save_dir}")
+        logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.load}")
         self.construct_inference_model(os.path.join(self.args.load, 'pytorch_model.bin'))
         self.model.to(self.args.device)
         self.model.eval()
@@ -452,9 +453,9 @@ class CorrectionGLMTrainer(TrainerBeta):
         logging.info("GLM model do the generation:")
         for test_data in tqdm(test_dataset_for_generation):
             mask_positions = []
-            for i, id in enumerate(test_data['input_ids']):
+            for idx, id in enumerate(test_data['input_ids']):
                 if id == self.tokenizer.mask_token_id:
-                    mask_positions.append(i)
+                    mask_positions.append(idx)
             while (test_data['input_ids'] == self.tokenizer.mask_token_id).sum() != (test_data['input_ids'] == self.tokenizer.eop_token_id).sum():
                 input_ids_length = len(test_data['input_ids'])
                 input_ids = torch.LongTensor(test_data['input_ids']).to(self.args.device).unsqueeze(0)
@@ -521,6 +522,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         self.model.to(self.args.device)
         self.model.eval()
         test_data_loader = DataLoader(self.test_dataset, batch_size=self.settings.detection_batch_size, collate_fn=self.data_collator)
+        edit_label_probs = []
         edit_label_predictions = []
         logger.info("Error Detection:")
         keep_label_id = self.data_processor.edit_label_map['$KEEP']
@@ -528,6 +530,8 @@ class CorrectionGLMTrainer(TrainerBeta):
             test_data.to(self.args.device)
             detection_logits = self.model(**test_data).logits[1]
             detection_probs = F.softmax(detection_logits, -1)
+            detection_probs_copy = detection_probs.tolist()
+            edit_label_probs.extend(detection_probs_copy)
             if self.settings.keep_threshold:
                 keep_mask = (detection_probs[:, :, keep_label_id] > self.settings.keep_threshold)*1.
                 detection_probs[:, :, keep_label_id] = keep_mask
@@ -539,7 +543,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         self.test_dataset = self.test_dataset.add_column('detection_predictions', edit_label_predictions)
         
         logger.info("Using Detection results to generate dataset for mask generation:")
-        logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.save_dir}")
+        logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.load}")
         self.construct_inference_model(os.path.join(self.args.load, 'pytorch_model.bin'))
         self.model.to(self.args.device)
         self.model.eval()
@@ -573,9 +577,9 @@ class CorrectionGLMTrainer(TrainerBeta):
             original_item = self.test_dataset[i]
             src_tokens = original_item['input_ids'][original_item['prefix_prompt_length']:original_item['prefix_length']]
             detections = original_item['detection_predictions']
-            for i, id in enumerate(test_data['input_ids']):
+            for idx, id in enumerate(test_data['input_ids']):
                 if id == self.tokenizer.mask_token_id:
-                    mask_positions.append(i)
+                    mask_positions.append(idx)
             while (test_data['input_ids'] == self.tokenizer.mask_token_id).sum() != (test_data['input_ids'] == self.tokenizer.eop_token_id).sum():
                 input_ids_length = len(test_data['input_ids'])
                 input_ids = torch.LongTensor(test_data['input_ids']).to(self.args.device).unsqueeze(0)
@@ -609,7 +613,9 @@ class CorrectionGLMTrainer(TrainerBeta):
             # end generation
             # mask position replace
             generation_part = list(test_data['input_ids'][test_data['source_length']:])
+            generation_part_copy = copy.deepcopy(generation_part)
             source_part = list(test_data['input_ids'][test_data['prefix_length']:test_data['source_length']])
+            source_part_copy = copy.deepcopy(source_part)
             while source_part.count(self.tokenizer.mask_token_id) > 0:
                 first_mask_pos = source_part.index(self.tokenizer.mask_token_id)
                 first_sop_pos = generation_part.index(self.tokenizer.sop_token_id)
@@ -626,8 +632,12 @@ class CorrectionGLMTrainer(TrainerBeta):
             res = {
                 'id':test_data['id'], 'src': test_data['text'], 'tgt': test_data['label'], 'predict': generation_res,
                 'src_tokens': self.tokenizer.convert_ids_to_tokens(src_tokens),
-                'detections': [self.data_processor.edit_label_id_map[i] for i in detections],
+                'detections': [self.data_processor.edit_label_id_map[j] for j in detections],
+                'detection_logits': edit_label_probs[i],
+                'detection_labels': [self.data_processor.edit_label_id_map[j] for j in test_data['detection_labels'][test_data['prefix_prompt_length']:test_data['prefix_length']]],
                 'predict_tokens': self.tokenizer.convert_ids_to_tokens(source_part),
+                'masked_src_tokens': self.tokenizer.convert_ids_to_tokens(source_part_copy),
+                'generated_tokens': self.tokenizer.convert_ids_to_tokens(generation_part_copy),
             }
             if 'other_labels' in test_data:
                 res['other_labels'] = test_data['other_labels']
