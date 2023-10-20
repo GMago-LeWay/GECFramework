@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import logging
-from peft import  PeftModel
+from peft import PeftModel, LoraConfig, TaskType, get_peft_model
 from transformers import AutoConfig, AutoTokenizer
 from transformers import StoppingCriteria, StoppingCriteriaList
 from utils.GLM.modeling_glm import *
@@ -107,9 +107,18 @@ class GLMForGrammaticalCorrection(GLMPreTrainedModel):
             # trust_remote_code=True,
             torch_dtype=settings.torch_dtype,
         )
-        if settings.lora_model is not None:
-            logger.info("loading peft model")
-            self.glm = PeftModel.from_pretrained(self.glm, settings.lora_model, torch_dtype=settings.torch_dtype)
+        if settings.use_lora:
+            if args.load is None:
+                logger.info("construct peft model of glm...")
+                peft_config = LoraConfig(
+                    task_type=TaskType.SEQ_2_SEQ_LM, 
+                    inference_mode=False, 
+                    r=8, lora_alpha=32, lora_dropout=0.1
+                )
+                self.glm = get_peft_model(self.glm, peft_config)
+            else:
+                logger.info("loading peft model of glm from checkpoint...")
+                self.glm = PeftModel.from_pretrained(self.glm, settings.lora_model, torch_dtype=settings.torch_dtype)
         # Sequence labeling head.
         self.dense = torch.nn.Linear(config.hidden_size, config.hidden_size, dtype=settings.torch_dtype)
         classifier_dropout = settings.output_dropout_prob

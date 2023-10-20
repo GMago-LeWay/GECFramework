@@ -202,6 +202,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             # log_level='info',
             learning_rate=settings.lr,
             fp16=False,
+            bf16=settings.bf16,
             group_by_length=False,
             gradient_accumulation_steps=settings.gradient_accumulation_steps,
             warmup_steps=settings.warmup_steps,
@@ -259,29 +260,30 @@ class CorrectionGLMTrainer(TrainerBeta):
         """
         Transform (transformers) dataset to meet the requirements of model
         """
-        columns = self.dataset['train'].column_names
+        columns = self.dataset['valid'].column_names
         reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_length']
         removed_columns = []
         for column in columns:
             if column not in reserved_columns:
                 removed_columns.append(column)
-        self.train_dataset = self.dataset['train'].map(
-            self._get_train_preprocess_function(for_validation=False),
-            batched=True,
-            remove_columns=removed_columns,
-            load_from_cache_file=not self.overwrite_cache,
-            # cache_file_name=os.path.join(self.settings.cache_dir, 'train_dataset.arrow'),
-            desc="Running preprocessing on train dataset",
-        )
-
-        self.valid_dataset = self.dataset['valid'].map(
-            self._get_train_preprocess_function(for_validation=True),
-            batched=True,
-            remove_columns=removed_columns,
-            load_from_cache_file=not self.overwrite_cache,
-            # cache_file_name=os.path.join(self.settings.cache_dir, 'valid_dataset.cache'),
-            desc="Running preprocessing on valid dataset"
-        )
+        if self.args.task_mode == "train":
+            self.train_dataset = self.dataset['train'].map(
+                self._get_train_preprocess_function(for_validation=False),
+                batched=True,
+                remove_columns=removed_columns,
+                load_from_cache_file=not self.overwrite_cache,
+                # cache_file_name=os.path.join(self.settings.cache_dir, 'train_dataset.arrow'),
+                desc="Running preprocessing on train dataset",
+            )
+        if self.args.task_mode in ["train", "eval"]:
+            self.valid_dataset = self.dataset['valid'].map(
+                self._get_train_preprocess_function(for_validation=True),
+                batched=True,
+                remove_columns=removed_columns,
+                load_from_cache_file=not self.overwrite_cache,
+                # cache_file_name=os.path.join(self.settings.cache_dir, 'valid_dataset.cache'),
+                desc="Running preprocessing on valid dataset"
+            )
 
     def test_dataset_transform(self, use_valid_set_as_test=False):
         dataset_key = 'valid' if use_valid_set_as_test else 'test'
@@ -517,6 +519,8 @@ class CorrectionGLMTrainer(TrainerBeta):
         """
         do infer on eval dataset and output midium ponents.
         """
+        ## dataset
+        self.dataset_transform()
         ## detection
         self.test_dataset_transform(use_valid_set_as_test=True)
         self.model.to(self.args.device)
@@ -548,21 +552,21 @@ class CorrectionGLMTrainer(TrainerBeta):
         self.model.to(self.args.device)
         self.model.eval()
 
-        # test_dataset_for_generation = self.test_dataset.map(
-        #     _transform_to_predict_first_phase,
-        #     batched=True,
-        #     remove_columns=[],
-        #     load_from_cache_file=not self.overwrite_cache,
-        #     desc="Running first generation preprocessing on test dataset"
-        # )
+        ## prepare dataset for generation
         test_dataset_for_generation = []
         reserved_columns = ['id', 'text', 'label']
         for i, item in tqdm(enumerate(self.test_dataset)):
+            valid_data_item = self.valid_dataset[i]
             src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
             result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, item['detection_predictions'])
+            std_result = self.data_processor.convert_detected_sentence_to_infer_example(
+                src_tokens, 
+                valid_data_item['detection_labels'][valid_data_item['prefix_prompt_length']:valid_data_item['prefix_length']]
+            )
             for key in reserved_columns:
                 if key in item:
                     result[key] = item[key]
+            result['golden_masked_src_token_ids'] = std_result["input_ids"][std_result["prefix_length"]:std_result["source_length"]]
             test_dataset_for_generation.append(result)
 
         max_gen_len = self.settings.max_new_tokens
@@ -575,6 +579,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         for i, test_data in tqdm(enumerate(test_dataset_for_generation)):
             mask_positions = []
             original_item = self.test_dataset[i]
+            valid_item = self.valid_dataset[i]
             src_tokens = original_item['input_ids'][original_item['prefix_prompt_length']:original_item['prefix_length']]
             detections = original_item['detection_predictions']
             for idx, id in enumerate(test_data['input_ids']):
@@ -633,10 +638,11 @@ class CorrectionGLMTrainer(TrainerBeta):
                 'id':test_data['id'], 'src': test_data['text'], 'tgt': test_data['label'], 'predict': generation_res,
                 'src_tokens': self.tokenizer.convert_ids_to_tokens(src_tokens),
                 'detections': [self.data_processor.edit_label_id_map[j] for j in detections],
-                'detection_logits': edit_label_probs[i],
-                'detection_labels': [self.data_processor.edit_label_id_map[j] for j in test_data['detection_labels'][test_data['prefix_prompt_length']:test_data['prefix_length']]],
+                # 'detection_logits': edit_label_probs[i],
+                'detection_labels': [self.data_processor.edit_label_id_map[j] for j in valid_item['detection_labels'][valid_item['prefix_prompt_length']:valid_item['prefix_length']]],
                 'predict_tokens': self.tokenizer.convert_ids_to_tokens(source_part),
                 'masked_src_tokens': self.tokenizer.convert_ids_to_tokens(source_part_copy),
+                'golden_masked_src_tokens': self.tokenizer.convert_ids_to_tokens(test_data['golden_masked_src_token_ids']),
                 'generated_tokens': self.tokenizer.convert_ids_to_tokens(generation_part_copy),
             }
             if 'other_labels' in test_data:

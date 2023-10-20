@@ -771,14 +771,15 @@ class Config:
             # pretrained model
             'language_model': True,
             'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-large-chinese'),
-            'lora_model': None,
+            'use_lora': True,
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
 
             # model config
-            'torch_dtype': torch.float32,
+            'torch_dtype': None,
             'load_in_8bit': False,
             'loss_ignore_id': -100,
             'loss_detach': False,
+            'bf16': False,
 
             # fixed parameters
             'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
@@ -791,7 +792,7 @@ class Config:
             'gradient_accumulation_steps': 8,
             'lr': 2e-5,
             'weight_decay': 1e-4,
-            'epoch': 2,
+            'epoch': 5,
             'warmup_steps': 1000,
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
@@ -806,8 +807,8 @@ class Config:
             'detection_batch_size': 8,
 
             # evaluation config
-            'eval_step': 2500,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 10000,  
+            'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 4000,  
 
             # inference config
             'load_config_keys': ['prompt', 'num_labels', 'alpha'],

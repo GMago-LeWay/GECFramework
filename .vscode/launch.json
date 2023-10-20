@@ -182,7 +182,7 @@
                 "--pre_save_dir", "glm_results",
                 "--load", "glm_results/correctionglm-mucgec-train-20231010-1624/checkpoint-60000",
                 "--device", "0",
-                "--devices", "3",
+                "--devices", "2",
             ],
         },
         {
