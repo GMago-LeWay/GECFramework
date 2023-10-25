@@ -71,8 +71,12 @@ class TextLabelDataset:
             val = gross_data[len(gross_data)-val_num-test_num: -test_num]
             ## save
             with open(train_data_file, 'w') as f:
+                for i in range(len(train)):
+                    train[i]['id'] = i    
                 json.dump(train, f, ensure_ascii=False, indent=4)
             with open(valid_data_file, 'w') as f:
+                for i in range(len(val)):
+                    val[i]['id'] = i
                 json.dump(val, f, ensure_ascii=False, indent=4)
             with open(test_data_file, 'w') as f:
                 for i in range(len(test)):
@@ -326,6 +330,7 @@ class TransformersDataset:
             assert split in ['train', 'valid', 'test']
             dataset_map = {}
             dataset_map[split] = self._get_dataset(split=split)
+            # dataset_map['valid'] = self._get_dataset(split='valid')
             for s in ['train', 'valid', 'test']:
                 if s not in dataset_map:
                     dataset_map[s] = []

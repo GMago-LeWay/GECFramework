@@ -145,10 +145,10 @@
             "args": [
                 "--model", "correctionglm",
                 "--task_mode", "train",
-                "--dataset", "pretrain",
-                "--pre_save_dir", "results",
+                "--dataset", "mucgec",
+                "--pre_save_dir", "glm_results",
                 "--device", "0",
-                "--devices", "2",
+                "--devices", "1",
             ],
         },  
         {
@@ -165,7 +165,7 @@
                 "--pre_save_dir", "glm_results",
                 "--load", "glm_results/correctionglm-mucgec-train-20231010-1624/checkpoint-60000",
                 "--device", "0",
-                "--devices", "3",
+                "--devices", "1",
             ],
         }, 
         {

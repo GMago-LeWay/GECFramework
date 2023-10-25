@@ -227,6 +227,23 @@ class CorrectionGLMTrainer(TrainerBeta):
             return processed
         return _preprocess
     
+    def _get_train_preprocess_function_using_predictions(self, for_validation=False):
+        def _preprocess(examples):
+            processed = {}
+            for i in range(len(examples['text'])):
+                src, tgt = examples['text'][i], examples['label'][i]
+                ## id check
+                assert examples["id"][i] == examples["check_id"][i]
+                result = self.data_processor.convert_gec_sentence_pair_to_example_using_detections(src, tgt, examples["detections"][i],
+                            self.settings.max_eval_source_length if for_validation else self.settings.max_train_source_length)
+                if not processed:
+                    for key in result:
+                        processed[key] = []
+                for key in result:
+                    processed[key].append(result[key])
+            return processed
+        return _preprocess
+    
     def _get_detection_preprocess_function(self):
         def _preprocess(examples):
             processed = {}
@@ -260,22 +277,51 @@ class CorrectionGLMTrainer(TrainerBeta):
         """
         Transform (transformers) dataset to meet the requirements of model
         """
-        columns = self.dataset['valid'].column_names
-        reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_length']
-        removed_columns = []
-        for column in columns:
-            if column not in reserved_columns:
-                removed_columns.append(column)
-        if self.args.task_mode == "train":
-            self.train_dataset = self.dataset['train'].map(
-                self._get_train_preprocess_function(for_validation=False),
-                batched=True,
-                remove_columns=removed_columns,
-                load_from_cache_file=not self.overwrite_cache,
-                # cache_file_name=os.path.join(self.settings.cache_dir, 'train_dataset.arrow'),
-                desc="Running preprocessing on train dataset",
-            )
+        if self.args.task_mode[-5:] == "train":
+            if self.settings.detection_results:
+                ## Using detections
+                detection_results = json.load(open(self.settings.detection_results))
+                assert len(self.dataset['train']) == len(detection_results), "Using uncompatible detection results for current training set."
+                logger.info(f"Loaded previous detection results from {self.settings.detection_results}")
+                self.dataset['train'] = self.dataset['train'].add_column('detections', [item['detections'] for item in detection_results])
+                self.dataset['train'] = self.dataset['train'].add_column('check_id', [item['id'] for item in detection_results])
+                logger.info(f"Added detections into train dataset.")
+                columns = self.dataset['train'].column_names
+                reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_length']
+                removed_columns = []
+                for column in columns:
+                    if column not in reserved_columns:
+                        removed_columns.append(column)
+                self.train_dataset = self.dataset['train'].map(
+                    self._get_train_preprocess_function_using_predictions(for_validation=False),
+                    batched=True,
+                    remove_columns=removed_columns,
+                    load_from_cache_file=not self.overwrite_cache,
+                    # cache_file_name=os.path.join(self.settings.cache_dir, 'train_dataset.arrow'),
+                    desc="Running preprocessing on train dataset",
+                )
+            else:
+                columns = self.dataset['train'].column_names
+                reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_length']
+                removed_columns = []
+                for column in columns:
+                    if column not in reserved_columns:
+                        removed_columns.append(column)
+                self.train_dataset = self.dataset['train'].map(
+                    self._get_train_preprocess_function(for_validation=False),
+                    batched=True,
+                    remove_columns=removed_columns,
+                    load_from_cache_file=not self.overwrite_cache,
+                    # cache_file_name=os.path.join(self.settings.cache_dir, 'train_dataset.arrow'),
+                    desc="Running preprocessing on train dataset",
+                )
         if self.args.task_mode in ["train", "eval"]:
+            columns = self.dataset['valid'].column_names
+            reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_length']
+            removed_columns = []
+            for column in columns:
+                if column not in reserved_columns:
+                    removed_columns.append(column)
             self.valid_dataset = self.dataset['valid'].map(
                 self._get_train_preprocess_function(for_validation=True),
                 batched=True,
@@ -285,9 +331,8 @@ class CorrectionGLMTrainer(TrainerBeta):
                 desc="Running preprocessing on valid dataset"
             )
 
-    def test_dataset_transform(self, use_valid_set_as_test=False):
-        dataset_key = 'valid' if use_valid_set_as_test else 'test'
-        self.test_dataset = self.dataset[dataset_key].map(
+    def test_dataset_transform(self, data_split='test'):
+        self.test_dataset = self.dataset[data_split].map(
             self._get_detection_preprocess_function(),
             batched=True,
             remove_columns=[],
@@ -522,7 +567,10 @@ class CorrectionGLMTrainer(TrainerBeta):
         ## dataset
         self.dataset_transform()
         ## detection
-        self.test_dataset_transform(use_valid_set_as_test=True)
+        if self.args.task_mode == 'eval_train':
+            self.test_dataset_transform('train')
+        else:
+            self.test_dataset_transform('eval')
         self.model.to(self.args.device)
         self.model.eval()
         test_data_loader = DataLoader(self.test_dataset, batch_size=self.settings.detection_batch_size, collate_fn=self.data_collator)
@@ -545,6 +593,16 @@ class CorrectionGLMTrainer(TrainerBeta):
             batch_size = len(prefix_length)
             edit_label_predictions.extend([detection_predictions[i][prefix_prompt_length[i]:prefix_length[i]] for i in range(batch_size)])
         self.test_dataset = self.test_dataset.add_column('detection_predictions', edit_label_predictions)
+
+        if self.settings.detection_only:
+            logger.info("Attention: Detection-only mode. Saving Detections...")
+            save_items = []
+            for i, item in enumerate(self.test_dataset):
+                src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
+                example_id = item['id']
+                save_items.append({"id": example_id, "source_tokens": src_tokens, "detections": edit_label_predictions[i]})
+            json.dump(save_items, open(os.path.join(self.args.save_dir, 'detection_results.json'), 'w'), indent=4, ensure_ascii=False)
+            return []
         
         logger.info("Using Detection results to generate dataset for mask generation:")
         logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.load}")
@@ -555,6 +613,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         ## prepare dataset for generation
         test_dataset_for_generation = []
         reserved_columns = ['id', 'text', 'label']
+        self.valid_dataset = self.test_dataset
         for i, item in tqdm(enumerate(self.test_dataset)):
             valid_data_item = self.valid_dataset[i]
             src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]

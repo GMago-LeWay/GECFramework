@@ -12,6 +12,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+IGNORE_ID=-100
+
+LAST_DETECTION_ERROR_NUM=0
+SEQUENCE_MATCH_ERROR_NUM=0
+ERROR_NUM=0
+
 def rindex(lst, val, start=None):
     if start is None:
         start = len(lst) - 1
@@ -30,7 +36,6 @@ def index_in_list(lst, val, start=None):
     return -1
 
 
-
 class TokenizerBasedTextEditProcessor:
     def __init__(self, tokenizer, without_insert=False, max_sequence_length=None) -> None:
         self.tokenizer = tokenizer
@@ -38,7 +43,9 @@ class TokenizerBasedTextEditProcessor:
         self.keep_label = '$KEEP'
         self.insert_label = '$INSERT' # Notice that 'insert' means insertion AFTER the current token
         self.error_label = '$ERROR'
+        self.ignore_label = '$IGNORE'
         self.edit_label_map = {
+            self.ignore_label: IGNORE_ID,
             self.keep_label: 0,
             self.error_label: 1,
             self.insert_label: 2,
@@ -209,12 +216,13 @@ class GLMDataProcessor:
         self.keep_label = self.edit_extractor.keep_label
         self.insert_label = self.edit_extractor.insert_label
         self.error_label = self.edit_extractor.error_label
+        self.ignore_label = self.edit_extractor.ignore_label
         self.edit_label_map = self.edit_extractor.edit_label_map
         self.edit_label_id_map = self.edit_extractor.edit_label_id_map
         # detection part template for input
         self.detection_prefix = config.prompt
         self.detection_prefix_tokens = self.tokenizer.encode(self.detection_prefix)
-        self._loss_ignore_id = -100
+        self._loss_ignore_id = IGNORE_ID
     
     def from_edit_to_glm_example(self, edits: List[Tuple[str, int, int, int, int]], original_src_tokens: List[int], original_tgt_tokens: List[int]):
         position_ids = np.ones(len(original_tgt_tokens)+1, dtype=int)        # +1 exclude bug when tgt_start = tgt_end = len(tgt_tokens)
@@ -242,7 +250,7 @@ class GLMDataProcessor:
 
             target_block_position_ids.append(np.arange(1, tgt_end - tgt_start + 2, dtype=int))
 
-        source_tokens, source_position_ids, local_spans = [], [], []
+        source_tokens, source_position_ids = [], []
         last, current_length = 0, 0
         mask_id = self.tokenizer.mask_token_id
         for _, src_start, src_end, tgt_start, tgt_end in edits:
@@ -277,10 +285,16 @@ class GLMDataProcessor:
             'position_ids': position_ids,
             'source_length': source_length,
         }
-        
-
-    def from_edit_label_to_glm_infer_example(self, edit_labels: List[str], src_tokens: List[int]):
+    
+    def _from_edit_label_to_masked_example(self, edit_labels: List[str], src_tokens: List[int]):
+        global LAST_DETECTION_ERROR_NUM
         mask_spans = []
+        # hard limit: last token is always correct (<eos>)
+        if edit_labels[-1] != self.keep_label:
+            edit_labels[-1] = self.keep_label
+            LAST_DETECTION_ERROR_NUM += 1
+            logger.info(f"({LAST_DETECTION_ERROR_NUM})Warning: Last position is not $KEEP when using edit labels for converting to masked sentence. It is illegal, set it to $KEEP.")
+
         last_correct_token_idx = -1
         # get mask spans
         for i, edit_label in enumerate(edit_labels):
@@ -327,27 +341,125 @@ class GLMDataProcessor:
             # local_spans.append((current_length, current_length + len(original_src_tokens) - last))
             source_tokens.append(src_tokens[last:])
             source_position_ids.append(position_ids[last:len(src_tokens)])
-        source_length = sum(map(len, source_tokens))
 
-        if mask_tokens_position:
-            tokens = np.concatenate(source_tokens + [[self.tokenizer.sop_token_id]], dtype=int)
-            # loss_masks = np.ones(len(tokens), dtype=np.long)
-            # loss_masks[:source_length] = 0
-            position_ids = np.concatenate(source_position_ids + [[mask_tokens_position[0]]])
-            block_position_ids = np.concatenate(
-                [np.zeros(source_length, dtype=int), [1]])
-            position_ids = np.stack([position_ids, block_position_ids], axis=0)
-        else:
-            tokens = np.concatenate(source_tokens, dtype=int)
-            position_ids = np.stack([np.concatenate(source_position_ids), np.zeros(source_length, dtype=int)], axis=0)
+        tokens = np.concatenate(source_tokens, dtype=int)
+        source_length = len(tokens)
+        position_ids = np.stack([np.concatenate(source_position_ids), np.zeros(source_length, dtype=int)], axis=0)
             
         return {
+            'input_ids': tokens,
+            'position_ids': position_ids,
+            'source_length': source_length,
+            'mask_positions': mask_tokens_position
+        }
+            
+    def from_edit_label_to_glm_infer_example(self, edit_labels: List[str], src_tokens: List[int]):
+        masked_example = self._from_edit_label_to_masked_example(edit_labels, src_tokens)
+        mask_tokens_position = masked_example['mask_positions']
+        source_tokens = masked_example['input_ids']
+        source_position_ids = masked_example['position_ids']
+        source_length = masked_example['source_length']
+
+        if mask_tokens_position:
+            source_tokens = np.concatenate((source_tokens, [self.tokenizer.sop_token_id]), dtype=int)
+            # loss_masks = np.ones(len(tokens), dtype=np.long)
+            # loss_masks[:source_length] = 0
+            source_position_ids = np.concatenate((source_position_ids, [[mask_tokens_position[0]], [1]]), axis=1)
+            
+        return {
+            'input_ids': source_tokens, 
+            'target_ids': np.array([self._loss_ignore_id] * len(source_tokens), dtype=int), 
+            'position_ids': source_position_ids,
+            'source_length': source_length,
+        }
+    
+    def from_detection_results_to_augmented_glm_example(self, detections: List[str], detection_labels: List[str], src_tokens: List[int], tgt_tokens: List[int]):
+        global SEQUENCE_MATCH_ERROR_NUM
+        # merge labels to detection results
+        assert len(detections) == len(detection_labels), "Maybe uncompatible detection results are applied on this dataset."
+        new_detections = []
+        for i in range(len(detections)):
+            if detection_labels[i] != self.keep_label:
+                new_detections.append(detection_labels[i])
+            else:
+                new_detections.append(detections[i])
+        masked_example = self._from_edit_label_to_masked_example(new_detections, src_tokens)
+        mask_positions = masked_example['mask_positions']
+        masked_tokens = masked_example['input_ids'].tolist()
+        source_position_ids = masked_example['position_ids'].tolist()
+        source_length = masked_example['source_length']
+        # aligned by mask
+        try:
+            r = SequenceMatcher(None, masked_tokens, tgt_tokens)
+            diffs = r.get_opcodes()
+
+            generation_edits = []
+            # check if every span corresponding to one MASK
+            for diff in diffs:
+                if diff[0] == 'equal':
+                    continue
+                else:
+                    generation_edits.append(diff)
+            assert len(generation_edits) == len(mask_positions), f"source_tokens: {src_tokens}\ntgt_tokens: {tgt_tokens}\nmasked_tokens: {masked_tokens}\n auto_edits: {generation_edits}"
+        except:
+            SEQUENCE_MATCH_ERROR_NUM += 1
+            logger.info(f"Sequence Matcher Failed({SEQUENCE_MATCH_ERROR_NUM}), trying to re-aligned...")
+            generation_edits = []
+            # traditional match
+            idx1, idx2 = 0, 0
+            while idx1 < len(masked_tokens) and idx2 < len(tgt_tokens):
+                if masked_tokens[idx1] == tgt_tokens[idx2]:
+                    idx1 += 1
+                    idx2 += 1
+                else:
+                    assert masked_tokens[idx1] == self.tokenizer.mask_token_id, f"source_tokens: {src_tokens}\ntgt_tokens: {tgt_tokens}\nmasked_tokens: {masked_tokens}\nsource: {self.tokenizer.decode(src_tokens)}\n target: {self.tokenizer.decode(tgt_tokens)}\n masked: {self.tokenizer.decode(masked_tokens)}"
+                    # notice that the last token would not be [MASK] because the last edit label will be set to "$KEEP" 
+                    diff_start = idx2
+                    diff_end = idx2
+                    while tgt_tokens[diff_end] != masked_tokens[idx1+1]:
+                        diff_end += 1
+                    # check if next token is equal or masked
+                    # TODO: It is a temp processed method, more complicate situation would not be processed.
+                    # if idx1 + 2 < len(masked_tokens) and masked_tokens[idx1+2] != self.tokenizer.mask_token_id:
+                    #     if diff_end + 1 < len(tgt_tokens):
+                    #         if masked_tokens[idx1+2] != tgt_tokens[diff_end+1]:
+                    #             logger.info(f"Hard to align: \nsource: {self.tokenizer.decode(src_tokens)}\n target: {self.tokenizer.decode(tgt_tokens)}\n masked: {self.tokenizer.decode(masked_tokens)}")
+                    #             diff_end += 1
+                    #             while tgt_tokens[diff_end] != masked_tokens[idx1+1]:
+                    #                 diff_end += 1
+                    #             logger.info(f"Hard Alignment: \nmask_id: {len(generation_edits)}\nAlignment: {self.tokenizer.decode(tgt_tokens[diff_start:diff_end])}")
+
+                    generation_edits.append(('replace', idx1, idx1+1, diff_start, diff_end))
+                    idx1 += 1
+                    idx2 = diff_end
+            assert idx1 == len(masked_tokens) and idx2 == len(tgt_tokens), f"source_tokens: {src_tokens}\ntgt_tokens: {tgt_tokens}\nmasked_tokens: {masked_tokens}\n auto_edits: {generation_edits}"
+            assert len(generation_edits) == len(mask_positions), f"source_tokens: {src_tokens}\ntgt_tokens: {tgt_tokens}\nmasked_tokens: {masked_tokens}\n auto_edits: {generation_edits}"
+            
+
+        # target_tokens: input end ; targets: output end
+        target_tokens, target_position_ids, target_block_position_ids, targets = [], [], [], []
+        for diff_label, src_start, src_end, tgt_start, tgt_end in generation_edits:
+            # check
+            assert src_end-src_start==1 and masked_tokens[src_start] == self.tokenizer.mask_token_id, "MASK Position uncompatible to edits, please check if all true edit labels are included in examples."
+            # add target
+            target_tokens.append([self.tokenizer.sop_token_id] + tgt_tokens[tgt_start:tgt_end])
+            targets.append(tgt_tokens[tgt_start:tgt_end] + [self.tokenizer.eop_token_id])
+            target_position_ids.append([src_start]*(1 + tgt_end - tgt_start))
+            target_block_position_ids.append(np.arange(1, tgt_end - tgt_start + 2, dtype=int))
+        
+        tokens = np.concatenate([masked_tokens] + target_tokens)
+        targets = np.concatenate([source_length*[self._loss_ignore_id]] + targets)
+        position_ids = np.concatenate([source_position_ids[0]] + target_position_ids)
+        block_position_ids = np.concatenate(
+            [np.zeros(source_length, dtype=int)] + target_block_position_ids)
+        position_ids = np.stack([position_ids, block_position_ids], axis=0)
+        return {
             'input_ids': tokens, 
-            'target_ids': np.array([self._loss_ignore_id] * len(tokens), dtype=int), 
+            'target_ids': targets, 
             'position_ids': position_ids,
             'source_length': source_length,
         }
-
+    
     def add_detection_prefix(self, glm_example: Dict, src_tokens: List[int], edit_labels: List[str]):
         detection_tokens = np.concatenate([self.detection_prefix_tokens, src_tokens])
         prefix_length = len(detection_tokens)
@@ -368,6 +480,28 @@ class GLMDataProcessor:
             'prefix_prompt_length': len(self.detection_prefix_tokens),
         }
 
+    def convert_gec_sentence_pair_to_example_using_detections(self, src: str, tgt: str, edit_prediction_ids: List[int], max_sentence_length: int = 100):
+        global ERROR_NUM
+        src_tokens, tgt_tokens, edits = self.edit_extractor.limited_split_sentence(src, tgt, max_sentence_length)
+        edit_labels = self.edit_extractor.edit_labels(edits=edits, src_tokens=src_tokens, tgt_tokens=tgt_tokens)
+        edit_predictions = [self.edit_label_id_map[i] for i in edit_prediction_ids]
+        try:
+            example = self.from_detection_results_to_augmented_glm_example(detections=edit_predictions[:len(edit_labels)], detection_labels=edit_labels, src_tokens=src_tokens, tgt_tokens=tgt_tokens)
+            train_example = self.add_detection_prefix(example, src_tokens=src_tokens, edit_labels=edit_labels)
+        except:
+            ERROR_NUM += 1
+            logger.info(f"({ERROR_NUM})ERROR Occured while converting data.")
+            example = {
+                'input_ids': np.array([], dtype=int), 
+                'target_ids': np.array([], dtype=int), 
+                'position_ids': np.array([[],[]], dtype=int),
+                'source_length': 0,
+            }
+            train_example = self.add_detection_prefix(example, src_tokens=src_tokens, edit_labels=[self.ignore_label]*len(edit_labels))
+        assert train_example['input_ids'].dtype == train_example['input_ids'].dtype == train_example['detection_labels'].dtype == train_example['position_ids'].dtype == int
+        assert type(train_example['source_length']) == type(train_example['prefix_length']) == type(train_example['prefix_prompt_length']) == int
+        return train_example
+    
     def convert_gec_sentence_pair_to_example(self, src: str, tgt: str, max_sentence_length: int = 100):
         # src_tokens, tgt_tokens = self.edit_extractor.split_sentence(src), self.edit_extractor.split_sentence(tgt)
         # edits = self.edit_extractor.edit(src_tokens, tgt_tokens)

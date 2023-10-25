@@ -85,7 +85,26 @@ class MultiFocalLoss(torch.nn.Module):
         return loss
 
 
-class GLMForGrammaticalCorrection(GLMPreTrainedModel):
+def GLMForGrammaticalCorrection(args, settings):
+    model = GLMForGrammaticalCorrectionModel(args, settings)
+    if settings.use_lora:
+        if args.load is None:
+            logger.info("construct peft model of glm for GEC...")
+            peft_config = LoraConfig(
+                task_type=TaskType.SEQ_2_SEQ_LM, 
+                inference_mode=False, 
+                r=8, lora_alpha=32, lora_dropout=0.1,
+                target_modules=['query_key_value']
+            )
+            model = get_peft_model(model, peft_config)
+        else:
+            logger.info("loading peft model of glm for GEC from checkpoint...")
+            model = PeftModel.from_pretrained(model, settings.lora_model, torch_dtype=settings.torch_dtype)
+        model.print_trainable_parameters()
+    return model
+
+
+class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
     def __init__(self, args, settings):
         config: GLMConfig = AutoConfig.from_pretrained(
             settings.pretrained_model, 
@@ -107,18 +126,6 @@ class GLMForGrammaticalCorrection(GLMPreTrainedModel):
             # trust_remote_code=True,
             torch_dtype=settings.torch_dtype,
         )
-        if settings.use_lora:
-            if args.load is None:
-                logger.info("construct peft model of glm...")
-                peft_config = LoraConfig(
-                    task_type=TaskType.SEQ_2_SEQ_LM, 
-                    inference_mode=False, 
-                    r=8, lora_alpha=32, lora_dropout=0.1
-                )
-                self.glm = get_peft_model(self.glm, peft_config)
-            else:
-                logger.info("loading peft model of glm from checkpoint...")
-                self.glm = PeftModel.from_pretrained(self.glm, settings.lora_model, torch_dtype=settings.torch_dtype)
         # Sequence labeling head.
         self.dense = torch.nn.Linear(config.hidden_size, config.hidden_size, dtype=settings.torch_dtype)
         classifier_dropout = settings.output_dropout_prob

@@ -369,6 +369,8 @@ class ExperimentsOfGECBeta:
             load_key = 'test'
         elif self.args.task_mode == 'eval':
             load_key = 'valid'
+        elif self.args.task_mode == 'eval_train':
+            load_key = 'train'
         else:
             raise NotImplementedError()
         raw_dataset = raw_dataset_loader.get_dataset_map(split=load_key)
@@ -384,7 +386,7 @@ class ExperimentsOfGECBeta:
         if self.args.task_mode == 'infer':
             json_results = trainer.do_infer()
             prediction_saving(args=self.args, json_results=json_results)
-        elif self.args.task_mode == 'eval':
+        elif self.args.task_mode in ['eval', 'eval_train']:
             json_results = trainer.do_eval()
             basic_saving(args=self.args, json_results=json_results)
         else:
@@ -395,7 +397,7 @@ class ExperimentsOfGECBeta:
     def conduct(self):
         preset_config = {}
 
-        if self.args.task_mode == 'infer' or self.args.task_mode == 'eval':
+        if self.args.task_mode in ['infer', 'eval', 'eval_train']:
             config = Config(model=self.args.model, dataset=self.args.dataset, preconfig=preset_config).get_config()
             self.run_infer(config=config)                
         elif self.args.task_mode == 'train':
@@ -533,7 +535,7 @@ if __name__ == '__main__':
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
     setup_log(args)
-    if args.task_mode in ['train', 'tune', 'test', 'infer', 'eval']:
+    if args.task_mode in ['train', 'tune', 'test', 'infer', 'eval', 'eval_train']:
         experiment = EXPERIMENTS[args.model](args)
         experiment.conduct()
     elif args.task_mode in ['augmentation']:

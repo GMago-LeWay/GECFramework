@@ -771,7 +771,7 @@ class Config:
             # pretrained model
             'language_model': True,
             'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-large-chinese'),
-            'use_lora': True,
+            'use_lora': False,
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
 
             # model config
@@ -793,13 +793,17 @@ class Config:
             'lr': 2e-5,
             'weight_decay': 1e-4,
             'epoch': 5,
-            'warmup_steps': 1000,
+            'warmup_steps': 100,
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
             'alpha': [1,2,2],  # [1,2,2], or [1,2]
 
             # data process parameters
             'cache_dir': '/data/liwei/cache',
+            'detection_results': 'glm_results/correctionglm-mucgec-eval_train-20231024-2312/detection_results.json',
+            # detections of current best checkpoint 
+            # 'glm_results/correctionglm-fcgec-eval_train-20231025-1407/detection_results.json'
+            # 'glm_results/correctionglm-mucgec-eval_train-20231024-2312/detection_results.json',
             'max_train_source_length': 128,
             'max_eval_source_length': 256,
             'train_batch_size': 12,
@@ -812,6 +816,7 @@ class Config:
 
             # inference config
             'load_config_keys': ['prompt', 'num_labels', 'alpha'],
+            'detection_only': False,
             'keep_threshold': None,
             'chinese_marker_substitution': True,
             # 'generation_config': dict(
