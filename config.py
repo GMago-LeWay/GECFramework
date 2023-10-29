@@ -43,7 +43,7 @@ DATA_DIR_NAME = {
     'augment': "augment3",
     'fangzhengaugment': "FangZhengAugment",
     'fangzhengdapei': "FangZhengDapei",
-    'pretrain': "PreTrainSetLarge",
+    'pretrain': "PreTrainSetSmall",
 }
 
 MODEL_CORR_DATA = {
@@ -792,15 +792,15 @@ class Config:
             'gradient_accumulation_steps': 8,
             'lr': 2e-5,
             'weight_decay': 1e-4,
-            'epoch': 5,
-            'warmup_steps': 100,
+            'epoch': 2,
+            'warmup_steps': 1000,
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
             'alpha': [1,2,2],  # [1,2,2], or [1,2]
 
             # data process parameters
             'cache_dir': '/data/liwei/cache',
-            'detection_results': 'glm_results/correctionglm-mucgec-eval_train-20231024-2312/detection_results.json',
+            'detection_results': None,
             # detections of current best checkpoint 
             # 'glm_results/correctionglm-fcgec-eval_train-20231025-1407/detection_results.json'
             # 'glm_results/correctionglm-mucgec-eval_train-20231024-2312/detection_results.json',

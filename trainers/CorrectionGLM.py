@@ -201,7 +201,6 @@ class CorrectionGLMTrainer(TrainerBeta):
             logging_steps=settings.logging_steps,
             # log_level='info',
             learning_rate=settings.lr,
-            fp16=False,
             bf16=settings.bf16,
             group_by_length=False,
             gradient_accumulation_steps=settings.gradient_accumulation_steps,
@@ -209,6 +208,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             weight_decay=settings.weight_decay,
             # lr_scheduler_type=settings.lr_scheduler,
             metric_for_best_model='eval_general_accuracy',
+            resume_from_checkpoint=args.resume,
         )
         logger.info(self.training_args)
     

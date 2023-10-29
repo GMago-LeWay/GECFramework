@@ -89,6 +89,8 @@ def GLMForGrammaticalCorrection(args, settings):
     model = GLMForGrammaticalCorrectionModel(args, settings)
     if settings.use_lora:
         if args.load is None:
+            # for n, p in model.named_parameters():
+            #     print(n)
             logger.info("construct peft model of glm for GEC...")
             peft_config = LoraConfig(
                 task_type=TaskType.SEQ_2_SEQ_LM, 
@@ -99,7 +101,7 @@ def GLMForGrammaticalCorrection(args, settings):
             model = get_peft_model(model, peft_config)
         else:
             logger.info("loading peft model of glm for GEC from checkpoint...")
-            model = PeftModel.from_pretrained(model, settings.lora_model, torch_dtype=settings.torch_dtype)
+            model = PeftModel.from_pretrained(model, args.load, torch_dtype=settings.torch_dtype)
         model.print_trainable_parameters()
     return model
 

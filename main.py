@@ -33,6 +33,8 @@ def parse_args():
                         help='GPU id.')
     parser.add_argument('--load', type=str, default=None,
                         help='model save directory to be loaded in infer task.')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='model checkpoint to continue training.')
     parser.add_argument('--seed', type=int, default=111,
                         help='random seed.')
     parser.add_argument('--data_save_dir', type=str, default=None,
