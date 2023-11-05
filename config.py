@@ -43,7 +43,7 @@ DATA_DIR_NAME = {
     'augment': "augment3",
     'fangzhengaugment': "FangZhengAugment",
     'fangzhengdapei': "FangZhengDapei",
-    'pretrain': "PreTrainSetSmall",
+    'pretrain': "PreTrainSetLarge",
 }
 
 MODEL_CORR_DATA = {
@@ -782,25 +782,31 @@ class Config:
             'bf16': False,
 
             # fixed parameters
+            'model_type': 'all',        # model type: all, detection, generate
             'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
             'output_dropout_prob': 0.2,        # detection head dropout
             'logging_steps': 10,
 
             # parameters that are able to be tuned
-            'prompt': '',
+            'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
             'detection_loss_weight': 3,
             'gradient_accumulation_steps': 8,
             'lr': 2e-5,
             'weight_decay': 1e-4,
-            'epoch': 2,
+            'epoch': 5,
             'warmup_steps': 1000,
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
             'alpha': [1,2,2],  # [1,2,2], or [1,2]
 
             # data process parameters
-            'cache_dir': '/data/liwei/cache',
-            'detection_results': None,
+            'cache_dir': '.cache',
+            'load_cache': True,
+            'detection_results': {
+                'train': None,
+                'valid': None,
+                'test': None
+            },
             # detections of current best checkpoint 
             # 'glm_results/correctionglm-fcgec-eval_train-20231025-1407/detection_results.json'
             # 'glm_results/correctionglm-mucgec-eval_train-20231024-2312/detection_results.json',
@@ -813,9 +819,10 @@ class Config:
             # evaluation config
             'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch 
             'save_step': 4000,  
+            'eval_key': 'eval_general_accuracy',
 
             # inference config
-            'load_config_keys': ['prompt', 'num_labels', 'alpha'],
+            'load_config_keys': ['model_type', 'prompt', 'num_labels', 'alpha'],
             'detection_only': False,
             'keep_threshold': None,
             'chinese_marker_substitution': True,

@@ -30,7 +30,6 @@ from dataset_provider.CorrectionGLM import GLMDataProcessor
 
 logger = logging.getLogger(__name__)
 
-accuracy_metric = evaluate.load("utils/accuracy")
 transformers.utils.move_cache('/data/liwei/cache/huggingface/')
 
 @dataclass
@@ -101,59 +100,74 @@ def postprocess_cn(result: str):
     return result
 
 
-# TODO: 2 class metrics
-def compute_metrics_2_label(eval_predictions):
-    pred_ids, label_ids = eval_predictions.predictions, eval_predictions.label_ids
-    glm_pred_ids, detection_pred_ids = pred_ids[0]
-    glm_labels, detection_labels = label_ids
+class CGLMMetrics:
+    def __init__(self, model_type, labels_num=3, loss_ignore_id=-100) -> None:
+        assert labels_num in [2,3]
+        assert model_type in ['all', 'detection', 'generate']
+        self.model_type = model_type
+        self.labels_num = labels_num
+        self.loss_ignore_id = loss_ignore_id
+        self.accuracy_metric = evaluate.load("utils/accuracy")
 
-    glm_pred_ids, detection_pred_ids, glm_labels, detection_labels = glm_pred_ids.ravel(), detection_pred_ids.ravel(), glm_labels.ravel(), detection_labels.ravel()
+    def accuracy(self, references, predictions, weights):
+        if weights.sum() == 0:
+            return 0
+        else:
+            return self.accuracy_metric.compute(references=references, predictions=predictions, sample_weight=weights)['accuracy']
+        
+    def glm_accuracy(self, glm_pred_ids, glm_labels):
+        glm_pred_ids, glm_labels = glm_pred_ids.ravel(), glm_labels.ravel()
+        glm_pred_weights = (1 - (glm_labels == -100)*1).ravel()
+        glm_accuracy = self.accuracy(references=glm_labels, predictions=glm_pred_ids, weights=glm_pred_weights)
+        return glm_accuracy
+    
+    def detection_metrics(self, detection_pred_ids, detection_labels):
+        detection_pred_ids, detection_labels = detection_pred_ids.ravel(), detection_labels.ravel()
+        detection_pred_weights = (1 - (detection_labels == -100)*1).ravel()
+        keep_pred_weights = ((detection_labels==0)*1).ravel()
+        error_pred_weights = ((detection_labels==1)*1).ravel()
+        detection_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=detection_pred_weights)
+        keep_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=keep_pred_weights)
+        error_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=error_pred_weights)
 
-    glm_pred_weights = (1 - (glm_labels == -100)*1).ravel()
-    detection_pred_weights = (1 - (detection_labels == -100)*1).ravel()
-    keep_pred_weights = ((detection_labels==0)*1).ravel()
-    error_pred_weights = ((detection_labels==1)*1).ravel()
-    glm_accuracy = accuracy_metric.compute(references=glm_labels, predictions=glm_pred_ids, sample_weight=glm_pred_weights)['accuracy']
-    detection_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=detection_pred_weights)['accuracy']
-    keep_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=keep_pred_weights)['accuracy']
-    error_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=error_pred_weights)['accuracy']
-    geometric_accuracy = (glm_accuracy*detection_accuracy)**0.5
-    detection_geometric_accuracy = ( keep_accuracy*error_accuracy ) ** (1/2)
-    general_accuary = (glm_accuracy*detection_geometric_accuracy)**0.5
+        if self.labels_num == 3:
+            insert_pred_weights = ((detection_labels==2)*1).ravel()
+            insert_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=insert_pred_weights)
+            detection_geometric_accuracy = ( keep_accuracy*error_accuracy*insert_accuracy ) ** (1/3)
+            return {'detection_accuracy': detection_accuracy, 'detection_geometric_accuracy': detection_geometric_accuracy,
+                    'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy, 'insert_accuracy': insert_accuracy}
+        else:
+            detection_geometric_accuracy = ( keep_accuracy*error_accuracy ) ** (1/2)
+            return {'detection_accuracy': detection_accuracy, 'detection_geometric_accuracy': detection_geometric_accuracy,
+                    'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy}
+        
+    def metrics(self, glm_pred_ids, glm_labels, detection_pred_ids, detection_labels):
+        if self.model_type == 'generate':
+            glm_accuracy = self.glm_accuracy(glm_pred_ids=glm_pred_ids, glm_labels=glm_labels)
+            return {'general_accuracy': general_accuary, 'glm_accuracy': glm_accuracy}
+        else:
+            detection_metrics = self.detection_metrics(detection_pred_ids=detection_pred_ids, detection_labels=detection_labels)
+            if self.model_type == 'detection':
+                detection_metrics['general_accuracy'] = detection_metrics['detection_geometric_accuracy']
+                return detection_metrics
+            else:
+                glm_accuracy = self.glm_accuracy(glm_pred_ids=glm_pred_ids, glm_labels=glm_labels)
+                ## avg of glm acc and balanced detecion acc
+                general_accuary = (glm_accuracy*detection_metrics['detection_geometric_accuracy'])**0.5
+                ## avg of glm acc and detecion acc
+                geometric_accuracy = (glm_accuracy*detection_metrics['detection_accuracy'])**0.5
+                metrics = {'general_accuracy': general_accuary, 'geometric_accuracy': geometric_accuracy, 'glm_accuracy': glm_accuracy,}
+                for key in detection_metrics:
+                    metrics[key] = detection_metrics[key]
+                return metrics
 
-    return {'general_accuracy': general_accuary, 
-            'geometric_accuracy': geometric_accuracy, 
-            'glm_accuracy': glm_accuracy, 'detection_accuracy': detection_accuracy, 
-            'detection_geometric_accuracy': detection_geometric_accuracy,
-            'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy}
-
-
-def compute_metrics_3_label(eval_predictions):
-    pred_ids, label_ids = eval_predictions.predictions, eval_predictions.label_ids
-    glm_pred_ids, detection_pred_ids = pred_ids[0]
-    glm_labels, detection_labels = label_ids
-
-    glm_pred_ids, detection_pred_ids, glm_labels, detection_labels = glm_pred_ids.ravel(), detection_pred_ids.ravel(), glm_labels.ravel(), detection_labels.ravel()
-
-    glm_pred_weights = (1 - (glm_labels == -100)*1).ravel()
-    detection_pred_weights = (1 - (detection_labels == -100)*1).ravel()
-    keep_pred_weights = ((detection_labels==0)*1).ravel()
-    error_pred_weights = ((detection_labels==1)*1).ravel()
-    insert_pred_weights = ((detection_labels==2)*1).ravel()
-    glm_accuracy = accuracy_metric.compute(references=glm_labels, predictions=glm_pred_ids, sample_weight=glm_pred_weights)['accuracy']
-    detection_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=detection_pred_weights)['accuracy']
-    keep_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=keep_pred_weights)['accuracy']
-    error_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=error_pred_weights)['accuracy']
-    insert_accuracy = accuracy_metric.compute(references=detection_labels, predictions=detection_pred_ids, sample_weight=insert_pred_weights)['accuracy']
-    geometric_accuracy = (glm_accuracy*detection_accuracy)**0.5
-    detection_geometric_accuracy = ( keep_accuracy*error_accuracy*insert_accuracy ) ** (1/3)
-    general_accuary = (glm_accuracy*detection_geometric_accuracy)**0.5
-
-    return {'general_accuracy': general_accuary, 
-            'geometric_accuracy': geometric_accuracy, 
-            'glm_accuracy': glm_accuracy, 'detection_accuracy': detection_accuracy, 
-            'detection_geometric_accuracy': detection_geometric_accuracy,
-            'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy, 'insert_accuracy': insert_accuracy}
+    def metrics_func(self):
+        def compute(eval_predictions):
+            pred_ids, label_ids = eval_predictions.predictions, eval_predictions.label_ids
+            glm_pred_ids, detection_pred_ids = pred_ids[0]['glm'], pred_ids[0]['detection']
+            glm_labels, detection_labels = label_ids
+            return self.metrics(glm_pred_ids=glm_pred_ids, glm_labels=glm_labels, detection_pred_ids=detection_pred_ids, detection_labels=detection_labels)
+        return compute
 
 
 def preprocess_logits_for_metrics(logits, labels):
@@ -161,10 +175,10 @@ def preprocess_logits_for_metrics(logits, labels):
     Original Trainer may have a memory leak. 
     This is a workaround to avoid storing too many tensors that are not needed.
     """
-    lm_logits, detection_logits = logits
+    lm_logits, detection_logits = logits['glm'], logits['detection']
     detection_pred = torch.argmax(detection_logits, dim=-1)
     glm_pred = torch.argmax(lm_logits, dim=-1)
-    return (glm_pred, detection_pred), labels
+    return {'glm': glm_pred, 'detection': detection_pred}, labels
 
 
 class CorrectionGLMTrainer(TrainerBeta):
@@ -176,9 +190,6 @@ class CorrectionGLMTrainer(TrainerBeta):
         self.data_processor = GLMDataProcessor(tokenizer=self.tokenizer, args=args, config=settings)
         self.data_collator = DataCollatorForGLMGEC(tokenizer=self.tokenizer, loss_ignore_id=self.data_processor._loss_ignore_id)
         # self.generation_data_collator = DataCollatorForGLMGECGeneration(tokenizer=self.tokenizer, loss_ignore_id=self.data_processor._loss_ignore_id)
-
-        # data config
-        self.overwrite_cache = False
 
         # initialize config for transformers trainer
         self.training_args = TrainingArguments(
@@ -207,12 +218,31 @@ class CorrectionGLMTrainer(TrainerBeta):
             warmup_steps=settings.warmup_steps,
             weight_decay=settings.weight_decay,
             # lr_scheduler_type=settings.lr_scheduler,
-            metric_for_best_model='eval_general_accuracy',
+            metric_for_best_model=settings.eval_key,
             resume_from_checkpoint=args.resume,
         )
         logger.info(self.training_args)
+
+    def _hash_data_settings(self):
+        pretrained_model = self.settings.pretrained_model
+        model_type = str(self.settings.model_type)
+        num_labels = str(self.settings.num_labels)
+        prompt = str(self.settings.prompt)
+        detection_results = str(self.settings.detection_results['train']) + '_' + str(self.settings.detection_results['valid']) + '_' + str(self.settings.detection_results['test']) 
+        data_dir = self.settings.data_dir
+        settings_list = [pretrained_model, model_type, num_labels, prompt, detection_results, data_dir]
+        settings_str = '_'.join(settings_list)
+        hash_value = hash(settings_str)
+        hash_str = str(hash_value).replace('-', '0')
+        logger.info(f'Hash Code Key of Dataset: {hash_str}')
+        return hash_str
     
-    def _get_train_preprocess_function(self, for_validation=False):
+    def _get_data_cache_name(self, correctionglm_data_category: str):
+        name = self.args.model.lower() + '_' + self.args.dataset.lower()
+        file_name =  '_'.join([name, correctionglm_data_category, self._hash_data_settings()]) + ".arrow"
+        return os.path.join(self.settings.cache_dir, file_name)
+    
+    def _get_train_preprocess_function(self, for_validation=False, detection_model=False):
         def _preprocess(examples):
             processed = {}
             for i in range(len(examples['text'])):
@@ -225,7 +255,21 @@ class CorrectionGLMTrainer(TrainerBeta):
                 for key in result:
                     processed[key].append(result[key])
             return processed
-        return _preprocess
+        
+        def _preprocess_detection_model(examples):
+            processed = {}
+            for i in range(len(examples['text'])):
+                src, tgt = examples['text'][i], examples['label'][i]
+                result = self.data_processor.convert_gec_sentence_pair_to_detection_example(src, tgt, 
+                            self.settings.max_eval_source_length if for_validation else self.settings.max_train_source_length)
+                if not processed:
+                    for key in result:
+                        processed[key] = []
+                for key in result:
+                    processed[key].append(result[key])
+            return processed
+        
+        return _preprocess_detection_model if detection_model else _preprocess
     
     def _get_train_preprocess_function_using_predictions(self, for_validation=False):
         def _preprocess(examples):
@@ -258,6 +302,21 @@ class CorrectionGLMTrainer(TrainerBeta):
             return processed
         return _preprocess        
     
+    def _get_detached_generation_preprocess_function(self):
+        def _preprocess(examples):
+            processed = {}
+            for i in range(len(examples['text'])):
+                src = examples['text'][i]
+                masked_src = examples['masked_text'][i]
+                result = self.data_processor.convert_masked_sentence_to_infer_example(src, masked_src)
+                if not processed:
+                    for key in result:
+                        processed[key] = []
+                for key in result:
+                    processed[key].append(result[key])
+            return processed
+        return _preprocess 
+    
     def _get_predict_preprocess_function(self):
         def _preprocess(examples):
             processed = {}
@@ -273,16 +332,19 @@ class CorrectionGLMTrainer(TrainerBeta):
             return processed
         return _preprocess
             
-    def dataset_transform(self):
+    def train_dataset_transform(self):
         """
-        Transform (transformers) dataset to meet the requirements of model
+        Transform (transformers) dataset to meet the requirements of model training.  
+        The self.train_dataset and the self.valid_dataset will be transformed from self.dataset['train'] and ['valid'].  
+        In load detection results mode, the corresponding results will be loaded.
         """
         if self.args.task_mode[-5:] == "train":
-            if self.settings.detection_results:
+            if self.settings.detection_results['train']:
                 ## Using detections
-                detection_results = json.load(open(self.settings.detection_results))
-                assert len(self.dataset['train']) == len(detection_results), "Using uncompatible detection results for current training set."
-                logger.info(f"Loaded previous detection results from {self.settings.detection_results}")
+                assert self.settings.model_type != 'detection', "ModelSettingError: Loading detection results is meaningless when training detection model."
+                detection_results = json.load(open(self.settings.detection_results['train']))
+                assert len(self.dataset['train']) == len(detection_results), f"Using uncompatible detection results for current training set. {len(self.dataset['train'])}, {len(detection_results)}"
+                logger.info(f"Loaded previous detection results from {self.settings.detection_results['train']}")
                 self.dataset['train'] = self.dataset['train'].add_column('detections', [item['detections'] for item in detection_results])
                 self.dataset['train'] = self.dataset['train'].add_column('check_id', [item['id'] for item in detection_results])
                 logger.info(f"Added detections into train dataset.")
@@ -296,8 +358,8 @@ class CorrectionGLMTrainer(TrainerBeta):
                     self._get_train_preprocess_function_using_predictions(for_validation=False),
                     batched=True,
                     remove_columns=removed_columns,
-                    load_from_cache_file=not self.overwrite_cache,
-                    # cache_file_name=os.path.join(self.settings.cache_dir, 'train_dataset.arrow'),
+                    load_from_cache_file=self.settings.load_cache,
+                    cache_file_name=self._get_data_cache_name("train_using_pred"),
                     desc="Running preprocessing on train dataset",
                 )
             else:
@@ -308,37 +370,81 @@ class CorrectionGLMTrainer(TrainerBeta):
                     if column not in reserved_columns:
                         removed_columns.append(column)
                 self.train_dataset = self.dataset['train'].map(
-                    self._get_train_preprocess_function(for_validation=False),
+                    self._get_train_preprocess_function(for_validation=False, detection_model=(self.settings.model_type == 'detection')),
                     batched=True,
                     remove_columns=removed_columns,
-                    load_from_cache_file=not self.overwrite_cache,
-                    # cache_file_name=os.path.join(self.settings.cache_dir, 'train_dataset.arrow'),
+                    load_from_cache_file=self.settings.load_cache,
+                    cache_file_name=self._get_data_cache_name("train"),
                     desc="Running preprocessing on train dataset",
                 )
         if self.args.task_mode in ["train", "eval"]:
-            columns = self.dataset['valid'].column_names
-            reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_length']
-            removed_columns = []
-            for column in columns:
-                if column not in reserved_columns:
-                    removed_columns.append(column)
-            self.valid_dataset = self.dataset['valid'].map(
-                self._get_train_preprocess_function(for_validation=True),
-                batched=True,
-                remove_columns=removed_columns,
-                load_from_cache_file=not self.overwrite_cache,
-                # cache_file_name=os.path.join(self.settings.cache_dir, 'valid_dataset.cache'),
-                desc="Running preprocessing on valid dataset"
-            )
+            if self.settings.detection_results['valid']:
+                ## Using detections
+                assert self.settings.model_type != 'detection', "ModelSettingError: Loading detection results is meaningless when evaluating detection model."
+                detection_results = json.load(open(self.settings.detection_results['valid']))
+                assert len(self.dataset['valid']) == len(detection_results), f"Using uncompatible detection results for current validation set. {len(self.dataset['valid'])}, {len(detection_results)}"
+                logger.info(f"Loaded previous detection results from {self.settings.detection_results['valid']}")
+                self.dataset['valid'] = self.dataset['valid'].add_column('detections', [item['detections'] for item in detection_results])
+                self.dataset['valid'] = self.dataset['valid'].add_column('check_id', [item['id'] for item in detection_results])
+                logger.info(f"Added detections into validation dataset.")
+                columns = self.dataset['valid'].column_names
+                reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_length']
+                removed_columns = []
+                for column in columns:
+                    if column not in reserved_columns:
+                        removed_columns.append(column)
+                self.train_dataset = self.dataset['valid'].map(
+                    self._get_train_preprocess_function_using_predictions(for_validation=True),
+                    batched=True,
+                    remove_columns=removed_columns,
+                    load_from_cache_file=self.settings.load_cache,
+                    cache_file_name=self._get_data_cache_name("valid_using_pred"),
+                    desc="Running preprocessing on valid dataset",
+                )
+            else:
+                columns = self.dataset['valid'].column_names
+                reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_length']
+                removed_columns = []
+                for column in columns:
+                    if column not in reserved_columns:
+                        removed_columns.append(column)
+                self.valid_dataset = self.dataset['valid'].map(
+                    self._get_train_preprocess_function(for_validation=True, detection_model=(self.settings.model_type == 'detection')),
+                    batched=True,
+                    remove_columns=removed_columns,
+                    load_from_cache_file=self.settings.load_cache,
+                    cache_file_name=self._get_data_cache_name("valid_using_pred"),
+                    desc="Running preprocessing on valid dataset"
+                )
 
     def test_dataset_transform(self, data_split='test'):
+        """
+        Transform (transformers) dataset to meet the requirements of model inference of detection task.
+        The self.test_dataset will be transformed from self.dataset[split]
+        """
+
         self.test_dataset = self.dataset[data_split].map(
             self._get_detection_preprocess_function(),
             batched=True,
             remove_columns=[],
-            load_from_cache_file=not self.overwrite_cache,
-            # cache_file_name=os.path.join(self.settings.cache_dir, 'test_dataset.cache'),
+            load_from_cache_file=self.settings.load_cache,
+            cache_file_name=self._get_data_cache_name(f"{data_split}_for_detection"),
             desc="Running detection preprocessing on test dataset"
+        )
+
+    def generation_test_dataset_transform(self, data_split='test'):
+        """
+        Transform (transformers) dataset to meet the requirements of model inference of generation task.
+        The self.test_dataset will be transformed from self.dataset[split]
+        NOTE: can only be used when masked text input is provided.
+        """
+        self.test_dataset = self.dataset[data_split].map(
+            self._get_detached_generation_preprocess_function(),
+            batched=True,
+            remove_columns=[],
+            load_from_cache_file=self.settings.load_cache,
+            cache_file_name=self._get_data_cache_name(f"{data_split}_for_generation"),
+            desc="Running generation preprocessing on test dataset"
         )
 
     def do_train(self):
@@ -348,7 +454,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         training_args = self.training_args
 
         # dataset
-        self.dataset_transform()
+        self.train_dataset_transform()
 
         # set logger
         log_level = self.training_args.get_process_log_level()
@@ -384,7 +490,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             eval_dataset=self.valid_dataset if self.training_args.do_eval else None,
             tokenizer=self.tokenizer,
             data_collator=self.data_collator,
-            compute_metrics=compute_metrics_3_label if self.settings.num_labels==3 else compute_metrics_2_label,
+            compute_metrics=CGLMMetrics(self.settings.num_labels, self.settings.loss_ignore_id).metrics_func(),
             preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
         # # for i, batch in enumerate(trainer.get_eval_dataloader()):
@@ -429,44 +535,70 @@ class CorrectionGLMTrainer(TrainerBeta):
         match_information = self.model.load_state_dict(torch.load(model_file), strict=False)
         logger.info(f"load checkpoint from {model_file}, with {match_information}")
 
+    def infer_on_dataset(self, split):
 
-    def do_infer(self):
-        """
-        do infer on inputs.
-        """
-        ## detection
-        self.test_dataset_transform()
-        self.model.to(self.args.device)
-        self.model.eval()
-        test_data_loader = DataLoader(self.test_dataset, batch_size=self.settings.detection_batch_size, collate_fn=self.data_collator)
-        edit_label_predictions = []
-        logger.info("Error Detection:")
-        keep_label_id = self.data_processor.edit_label_map['$KEEP']
-        for test_data in tqdm(test_data_loader):
-            test_data.to(self.args.device)
-            detection_logits = self.model(**test_data).logits[1]
-            detection_probs = F.softmax(detection_logits, -1)
-            if self.settings.keep_threshold:
-                keep_mask = (detection_probs[:, :, keep_label_id] > self.settings.keep_threshold)*1.
-                detection_probs[:, :, keep_label_id] = keep_mask
-            detection_predictions = detection_probs.argmax(-1).tolist()
-            prefix_length = test_data['prefix_length'].tolist()
-            prefix_prompt_length = test_data['prefix_prompt_length'].tolist()
-            batch_size = len(prefix_length)
-            edit_label_predictions.extend([detection_predictions[i][prefix_prompt_length[i]:prefix_length[i]] for i in range(batch_size)])
-        self.test_dataset = self.test_dataset.add_column('detection_predictions', edit_label_predictions)
+        # save settings
+        if split in ['valid', 'test']:
+            save_dir = os.path.join(self.args.save_dir, split)
+        else:
+            save_dir = self.args.save_dir
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        
+        # detection results load (2-stage method)
+        if self.settings.detection_results[split]:
+            logger.info(f"loading first stage detection results from {self.settings.detection_results['infer']}")
+            detection_results = json.load(open(self.settings.detection_results[split]))
+            # self.test_dataset is self.dataset['split']
+            self.test_dataset = self.dataset[split]
+            # check id compatible
+            assert len(detection_results) == len(self.test_dataset), f"Uncompatible detection results from {self.settings.detection_results['infer']}"
+            for i in range(len(detection_results)):
+                assert detection_results[i]["id"] == self.test_dataset[i]["id"], f"Uncompatible detection results from {self.settings.detection_results['infer']}"
+            # add masked text to test dataset and transform
+            self.test_dataset = self.test_dataset.add_column('masked_text', [item["masked_text"] for item in detection_results])
+            self.generation_test_dataset_transform()
+        
+        # detection process (if no detection results are arranged)
+        else:
+            self.test_dataset_transform(split)
+            test_data_loader = DataLoader(self.test_dataset, batch_size=self.settings.detection_batch_size, collate_fn=self.data_collator)
+            edit_label_predictions = []
+            logger.info("Error Detection:")
+            keep_label_id = self.data_processor.edit_label_map['$KEEP']
+            for test_data in tqdm(test_data_loader):
+                test_data.to(self.args.device)
+                detection_logits = self.model(**test_data).logits['detection']
+                detection_probs = F.softmax(detection_logits, -1)
+                if self.settings.keep_threshold:
+                    keep_mask = (detection_probs[:, :, keep_label_id] > self.settings.keep_threshold)*1.
+                    detection_probs[:, :, keep_label_id] = keep_mask
+                detection_predictions = detection_probs.argmax(-1).tolist()
+                prefix_length = test_data['prefix_length'].tolist()
+                prefix_prompt_length = test_data['prefix_prompt_length'].tolist()
+                batch_size = len(prefix_length)
+                edit_label_predictions.extend([detection_predictions[i][prefix_prompt_length[i]:prefix_length[i]] for i in range(batch_size)])
+            self.test_dataset = self.test_dataset.add_column('detection_predictions', edit_label_predictions)
+            test_dataset_for_generation = self.test_dataset
 
-        # def _transform_to_predict_first_phase(examples):
-        #     processed = {}
-        #     for i in range(len(examples['input_ids'])):
-        #         src_tokens = examples['input_ids'][i][examples['prefix_prompt_length'][i]:examples['prefix_length'][i]]
-        #         result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, examples['detection_predictions'][i])
-        #         if not processed:
-        #             for key in result:
-        #                 processed[key] = []
-        #         for key in result:
-        #             processed[key].append(result[key])
-        #     return processed
+            if self.settings.model_type == 'detection':
+                logger.info("Warning: Because the detection model mode is chosen, The inference will be done under detection-only mode")
+                self.settings.detection_only = True
+
+            ## detection-only mode
+            if self.settings.detection_only:
+                logger.info("Attention: Detection-only mode. Saving Detections And Masked text for next stage...")
+                save_items = []
+                for i, item in enumerate(self.test_dataset):
+                    src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
+                    masked_example = self.data_processor.from_edit_label_to_masked_example([self.data_processor.edit_label_id_map[idx] for idx in item['detection_predictions']], src_tokens)
+                    masked_text = self.tokenizer.decode(masked_example['input_ids'])
+                    example_id = item['id']
+                    save_items.append({"id": example_id, "masked_text": masked_text, "source_tokens": src_tokens, "detections": edit_label_predictions[i]})
+                json.dump(save_items, open(os.path.join(save_dir, 'detection_results.json'), 'w'), indent=4, ensure_ascii=False)
+                return []
+
+        ## After detection, Preparing data for generation
         
         logger.info("Using Detection results to generate dataset for mask generation:")
         logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.load}")
@@ -474,13 +606,6 @@ class CorrectionGLMTrainer(TrainerBeta):
         self.model.to(self.args.device)
         self.model.eval()
 
-        # test_dataset_for_generation = self.test_dataset.map(
-        #     _transform_to_predict_first_phase,
-        #     batched=True,
-        #     remove_columns=[],
-        #     load_from_cache_file=not self.overwrite_cache,
-        #     desc="Running first generation preprocessing on test dataset"
-        # )
         test_dataset_for_generation = []
         reserved_columns = ['id', 'text', 'label']
         for i, item in tqdm(enumerate(self.test_dataset)):
@@ -491,18 +616,21 @@ class CorrectionGLMTrainer(TrainerBeta):
                     result[key] = item[key]
             test_dataset_for_generation.append(result)
 
+        # generation settings 
         max_gen_len = self.settings.max_new_tokens
 
-        ## save result one by one
-        f = open(os.path.join(self.args.save_dir, 'real-time-results.json'), 'w')
+        ## save real-time result one by one
+        f = open(os.path.join(save_dir, 'real-time-results.json'), 'w')
         results = []
 
+        ## model do the generation at every [MASK]
         logging.info("GLM model do the generation:")
         for test_data in tqdm(test_dataset_for_generation):
             mask_positions = []
             for idx, id in enumerate(test_data['input_ids']):
                 if id == self.tokenizer.mask_token_id:
                     mask_positions.append(idx)
+            # generate until all mask is generated
             while (test_data['input_ids'] == self.tokenizer.mask_token_id).sum() != (test_data['input_ids'] == self.tokenizer.eop_token_id).sum():
                 input_ids_length = len(test_data['input_ids'])
                 input_ids = torch.LongTensor(test_data['input_ids']).to(self.args.device).unsqueeze(0)
@@ -559,28 +687,46 @@ class CorrectionGLMTrainer(TrainerBeta):
         f.close()
 
         return results
+    
+    def do_infer(self):
+        """
+        do infer on inputs.
+        """
+        ## detection on test dataset
 
-    def do_eval(self):
-        """
-        do infer on eval dataset and output midium ponents.
-        """
-        ## dataset
-        self.dataset_transform()
-        ## detection
-        if self.args.task_mode == 'eval_train':
-            self.test_dataset_transform('train')
-        else:
-            self.test_dataset_transform('eval')
+        # prepare model
         self.model.to(self.args.device)
         self.model.eval()
+        if self.args.task_mode == "infer_train":
+            logger.info("Infer Train Mode, inferring on train dataset...")
+            train_infer_res = self.infer_on_dataset('train')
+            logger.info("Infer Train Mode, inferring on validation dataset...")
+            valid_infer_res = self.infer_on_dataset('valid')
+        logger.info("Inferring on test dataset...")
+        test_infer_res = self.infer_on_dataset('test')
+        return test_infer_res   
+
+    
+    def eval_on_dataset(self, split):
+        """
+        self.test_dataset is set by dataset['spilt'] for evaluation in this function.
+        """
+        # save directory
+        save_dir = os.path.join(self.args.save_dir, split)
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        
+        # dataset and model prepare
+        self.test_dataset_transform(split)
         test_data_loader = DataLoader(self.test_dataset, batch_size=self.settings.detection_batch_size, collate_fn=self.data_collator)
         edit_label_probs = []
         edit_label_predictions = []
+        # detection
         logger.info("Error Detection:")
         keep_label_id = self.data_processor.edit_label_map['$KEEP']
         for test_data in tqdm(test_data_loader):
             test_data.to(self.args.device)
-            detection_logits = self.model(**test_data).logits[1]
+            detection_logits = self.model(**test_data).logits['detection']
             detection_probs = F.softmax(detection_logits, -1)
             detection_probs_copy = detection_probs.tolist()
             edit_label_probs.extend(detection_probs_copy)
@@ -594,6 +740,11 @@ class CorrectionGLMTrainer(TrainerBeta):
             edit_label_predictions.extend([detection_predictions[i][prefix_prompt_length[i]:prefix_length[i]] for i in range(batch_size)])
         self.test_dataset = self.test_dataset.add_column('detection_predictions', edit_label_predictions)
 
+
+        if self.settings.model_type == 'detection':
+            logger.info("Warning: Because the detection model mode is chosen, The evaluation will be done under detection-only mode")
+            self.settings.detection_only = True
+
         if self.settings.detection_only:
             logger.info("Attention: Detection-only mode. Saving Detections...")
             save_items = []
@@ -601,7 +752,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                 src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
                 example_id = item['id']
                 save_items.append({"id": example_id, "source_tokens": src_tokens, "detections": edit_label_predictions[i]})
-            json.dump(save_items, open(os.path.join(self.args.save_dir, 'detection_results.json'), 'w'), indent=4, ensure_ascii=False)
+            json.dump(save_items, open(os.path.join(save_dir, 'detection_results.json'), 'w'), indent=4, ensure_ascii=False)
             return []
         
         logger.info("Using Detection results to generate dataset for mask generation:")
@@ -613,9 +764,15 @@ class CorrectionGLMTrainer(TrainerBeta):
         ## prepare dataset for generation
         test_dataset_for_generation = []
         reserved_columns = ['id', 'text', 'label']
-        self.valid_dataset = self.test_dataset
+        # self.valid_dataset = self.test_dataset
         for i, item in tqdm(enumerate(self.test_dataset)):
-            valid_data_item = self.valid_dataset[i]
+            # find correspond labeled data example, save relavant information
+            if split == "train":
+                valid_data_item = self.train_dataset[i]
+            elif split == "valid":
+                valid_data_item = self.valid_dataset[i]
+            else:
+                raise NotImplementedError()
             src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
             result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, item['detection_predictions'])
             std_result = self.data_processor.convert_detected_sentence_to_infer_example(
@@ -631,19 +788,28 @@ class CorrectionGLMTrainer(TrainerBeta):
         max_gen_len = self.settings.max_new_tokens
 
         ## save result one by one
-        f = open(os.path.join(self.args.save_dir, 'real-time-results.json'), 'w')
+        f = open(os.path.join(save_dir, 'real-time-results.json'), 'w')
         results = []
 
         logging.info("GLM model do the generation:")
         for i, test_data in tqdm(enumerate(test_dataset_for_generation)):
             mask_positions = []
             original_item = self.test_dataset[i]
-            valid_item = self.valid_dataset[i]
+            # find correspond labeled data example, save relavant information
+            if split == "train":
+                valid_item = self.train_dataset[i]
+            elif split == "valid":
+                valid_item = self.valid_dataset[i]
+            else:
+                raise NotImplementedError()
+            
+            # get mask position from masked text
             src_tokens = original_item['input_ids'][original_item['prefix_prompt_length']:original_item['prefix_length']]
             detections = original_item['detection_predictions']
             for idx, id in enumerate(test_data['input_ids']):
                 if id == self.tokenizer.mask_token_id:
                     mask_positions.append(idx)
+            # generate until all mask is generated
             while (test_data['input_ids'] == self.tokenizer.mask_token_id).sum() != (test_data['input_ids'] == self.tokenizer.eop_token_id).sum():
                 input_ids_length = len(test_data['input_ids'])
                 input_ids = torch.LongTensor(test_data['input_ids']).to(self.args.device).unsqueeze(0)
@@ -712,6 +878,25 @@ class CorrectionGLMTrainer(TrainerBeta):
         f.close()
 
         return results
+    
+
+    def do_eval(self):
+        """
+        do infer on eval dataset and output as much midium ponents for debugging.
+        """
+        ## model
+        self.model.to(self.args.device)
+        self.model.eval()
+        ## dataset
+        # in eval mode, the true label information are required, so dataset transform is essential
+        self.train_dataset_transform()
+        if self.args.task_mode == "eval_train":
+            logger.info("Eval Train Mode, evaluate on train dataset...")
+            train_eval_res = self.eval_on_dataset('train')
+        logger.info("Evaluate on validation dataset...")
+        valid_eval_res = self.eval_on_dataset('valid')
+        return valid_eval_res
+
 
     def save(self, save_dir):
         if self.args.task_mode == 'train':
@@ -720,14 +905,16 @@ class CorrectionGLMTrainer(TrainerBeta):
             config_dict = {}
             for key in self.settings:
                 content = self.settings[key]
-                if type(content) in [str, int, float, bool, list]:
+                if type(content) in [str, int, float, bool, list, dict]:
                     config_dict[key] = content
                 else:
                     config_dict[key] = str(content)
             config_dict['model'] = self.args.model
             config_dict['dataset'] = self.args.dataset
             config_dict['task_mode'] = self.args.task_mode
+            config_dict['seed'] = self.args.seed
             config_dict['load'] = self.args.load
+            config_dict['resume'] = self.args.resume
 
             json.dump(config_dict, open(config_file, 'w'), indent=4, ensure_ascii=False)
         else:    

@@ -286,7 +286,7 @@ class GLMDataProcessor:
             'source_length': source_length,
         }
     
-    def _from_edit_label_to_masked_example(self, edit_labels: List[str], src_tokens: List[int]):
+    def from_edit_label_to_masked_example(self, edit_labels: List[str], src_tokens: List[int]):
         global LAST_DETECTION_ERROR_NUM
         mask_spans = []
         # hard limit: last token is always correct (<eos>)
@@ -354,7 +354,7 @@ class GLMDataProcessor:
         }
             
     def from_edit_label_to_glm_infer_example(self, edit_labels: List[str], src_tokens: List[int]):
-        masked_example = self._from_edit_label_to_masked_example(edit_labels, src_tokens)
+        masked_example = self.from_edit_label_to_masked_example(edit_labels, src_tokens)
         mask_tokens_position = masked_example['mask_positions']
         source_tokens = masked_example['input_ids']
         source_position_ids = masked_example['position_ids']
@@ -383,7 +383,7 @@ class GLMDataProcessor:
                 new_detections.append(detection_labels[i])
             else:
                 new_detections.append(detections[i])
-        masked_example = self._from_edit_label_to_masked_example(new_detections, src_tokens)
+        masked_example = self.from_edit_label_to_masked_example(new_detections, src_tokens)
         mask_positions = masked_example['mask_positions']
         masked_tokens = masked_example['input_ids'].tolist()
         source_position_ids = masked_example['position_ids'].tolist()
@@ -512,6 +512,25 @@ class GLMDataProcessor:
         assert train_example['input_ids'].dtype == train_example['input_ids'].dtype == train_example['detection_labels'].dtype == train_example['position_ids'].dtype == int
         assert type(train_example['source_length']) == type(train_example['prefix_length']) == type(train_example['prefix_prompt_length']) == int
         return train_example
+
+    def convert_gec_sentence_pair_to_detection_example(self, src: str, tgt: str, max_sentence_length: int = 100):
+        '''
+        TODO: 将句子对转换为纯检测器的训练样本
+        '''
+        # src_tokens, tgt_tokens = self.edit_extractor.split_sentence(src), self.edit_extractor.split_sentence(tgt)
+        # edits = self.edit_extractor.edit(src_tokens, tgt_tokens)
+        src_tokens, tgt_tokens, edits = self.edit_extractor.limited_split_sentence(src, tgt, max_sentence_length)
+        edit_labels = self.edit_extractor.edit_labels(edits=edits, src_tokens=src_tokens, tgt_tokens=tgt_tokens)
+        temp_example = {
+            'input_ids': np.array([], dtype=int), 
+            'target_ids': np.array([], dtype=int), 
+            'position_ids': np.array([[],[]], dtype=int),
+            'source_length': 0,
+        }
+        train_example = self.add_detection_prefix(temp_example, src_tokens=src_tokens, edit_labels=edit_labels)
+        assert train_example['input_ids'].dtype == train_example['input_ids'].dtype == train_example['detection_labels'].dtype == train_example['position_ids'].dtype == int
+        assert type(train_example['source_length']) == type(train_example['prefix_length']) == type(train_example['prefix_prompt_length']) == int
+        return train_example
     
     def convert_sentence_to_detection_example(self, src: str, max_sentence_length: int = None):
         src_tokens = self.edit_extractor.split_sentence(src, max_sentence_length=max_sentence_length)
@@ -528,6 +547,40 @@ class GLMDataProcessor:
         edit_labels = [self.edit_label_id_map[item] for item in edit_label_ids]
         # src_tokens = self.edit_extractor.split_sentence(src)
         example = self.from_edit_label_to_glm_infer_example(edit_labels=edit_labels, src_tokens=src_tokens)
+        infer_example = self.add_detection_prefix(example, src_tokens=src_tokens, edit_labels=edit_labels)
+        return infer_example
+
+    def convert_masked_sentence_to_infer_example(self, src: str, masked_text: str, max_sentence_length: int = None):
+        '''
+        TODO: 根据检错模型输出的MASK文本转换出用于生成的样本
+        '''
+        # tokenize
+        src_tokens = self.edit_extractor.split_sentence(src, max_sentence_length=max_sentence_length)
+        masked_src_tokens = self.edit_extractor.split_sentence(masked_text, max_sentence_length=max_sentence_length)
+
+        # find [MASK]
+        source_tokens = masked_src_tokens
+        mask_tokens_position = []
+        for i, token in source_tokens:
+            if token == self.tokenizer.pad_token_id:
+                mask_tokens_position.append(i)
+        source_position_ids = list(range(len(source_tokens)))
+        source_length = len(source_tokens)
+
+        # if theres a mask, add a <sop> token
+        if mask_tokens_position:
+            source_tokens = np.concatenate((source_tokens, [self.tokenizer.sop_token_id]), dtype=int)
+            # loss_masks = np.ones(len(tokens), dtype=np.long)
+            # loss_masks[:source_length] = 0
+            source_position_ids = np.concatenate((source_position_ids, [[mask_tokens_position[0]], [1]]), axis=1)
+            
+        example = {
+            'input_ids': np.array(source_tokens, dtype=int), 
+            'target_ids': np.array([self._loss_ignore_id] * len(source_tokens), dtype=int), 
+            'position_ids': source_position_ids,
+            'source_length': source_length,
+        }
+        edit_labels = [self.keep_label]*len(src_tokens)
         infer_example = self.add_detection_prefix(example, src_tokens=src_tokens, edit_labels=edit_labels)
         return infer_example
 

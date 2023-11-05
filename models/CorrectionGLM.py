@@ -149,19 +149,39 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
                 target_ids=None,
                 detection_labels=None,
                 **kwargs):
-
+        
+        # glm model prediction
         model_out = self.glm(input_ids, position_ids, attention_mask)
         outputs, lm_logits = model_out.last_hidden_states, model_out.logits
-        output_for_detection = self.dropout(outputs)
-        if self.loss_detach:
-            output_for_detection = output_for_detection.detach()
-        output_for_detection = torch.tanh(self.dense(output_for_detection))
-        output_for_detection = self.dropout(output_for_detection)
-        logits = self.out_proj(output_for_detection)
-        detection_loss = self.labeling_loss(logits.view(-1, self.settings.num_labels), detection_labels.view(-1))
         lm_loss = self.glm_loss(lm_logits.view(-1, lm_logits.shape[-1]), target_ids.view(-1))
-        loss = lm_loss + self.settings.detection_loss_weight * detection_loss
-        return ModelOutput(
-            loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
-            logits=(lm_logits, logits),
-        )
+
+        # generation model
+        if self.settings.model_type == 'generate':
+            loss = lm_loss
+            return ModelOutput(
+                loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
+                logits={'glm': lm_logits},
+            )
+        # detection prediction
+        else:
+            output_for_detection = self.dropout(outputs)
+            if self.loss_detach:
+                output_for_detection = output_for_detection.detach()
+            output_for_detection = torch.tanh(self.dense(output_for_detection))
+            output_for_detection = self.dropout(output_for_detection)
+            logits = self.out_proj(output_for_detection)
+            detection_loss = self.labeling_loss(logits.view(-1, self.settings.num_labels), detection_labels.view(-1))
+            # detection model
+            if self.settings.model_type == 'detection':
+                loss = detection_loss
+                return ModelOutput(
+                    loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
+                    logits={'detection': logits},
+                )
+            # hybrid model
+            else:
+                loss = lm_loss + self.settings.detection_loss_weight * detection_loss
+                return ModelOutput(
+                    loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
+                    logits={'glm': lm_logits, 'detection': logits},
+                )
