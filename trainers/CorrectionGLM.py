@@ -7,6 +7,7 @@ import copy
 import numpy as np
 import torch
 import torch.nn.functional as F
+import hashlib
 from torch.utils.data.dataloader import DataLoader
 import datasets
 import transformers
@@ -144,7 +145,7 @@ class CGLMMetrics:
     def metrics(self, glm_pred_ids, glm_labels, detection_pred_ids, detection_labels):
         if self.model_type == 'generate':
             glm_accuracy = self.glm_accuracy(glm_pred_ids=glm_pred_ids, glm_labels=glm_labels)
-            return {'general_accuracy': general_accuary, 'glm_accuracy': glm_accuracy}
+            return {'general_accuracy': glm_accuracy, 'glm_accuracy': glm_accuracy}
         else:
             detection_metrics = self.detection_metrics(detection_pred_ids=detection_pred_ids, detection_labels=detection_labels)
             if self.model_type == 'detection':
@@ -153,10 +154,10 @@ class CGLMMetrics:
             else:
                 glm_accuracy = self.glm_accuracy(glm_pred_ids=glm_pred_ids, glm_labels=glm_labels)
                 ## avg of glm acc and balanced detecion acc
-                general_accuary = (glm_accuracy*detection_metrics['detection_geometric_accuracy'])**0.5
+                general_accuracy = (glm_accuracy*detection_metrics['detection_geometric_accuracy'])**0.5
                 ## avg of glm acc and detecion acc
                 geometric_accuracy = (glm_accuracy*detection_metrics['detection_accuracy'])**0.5
-                metrics = {'general_accuracy': general_accuary, 'geometric_accuracy': geometric_accuracy, 'glm_accuracy': glm_accuracy,}
+                metrics = {'general_accuracy': general_accuracy, 'geometric_accuracy': geometric_accuracy, 'glm_accuracy': glm_accuracy,}
                 for key in detection_metrics:
                     metrics[key] = detection_metrics[key]
                 return metrics
@@ -164,7 +165,11 @@ class CGLMMetrics:
     def metrics_func(self):
         def compute(eval_predictions):
             pred_ids, label_ids = eval_predictions.predictions, eval_predictions.label_ids
-            glm_pred_ids, detection_pred_ids = pred_ids[0]['glm'], pred_ids[0]['detection']
+            glm_pred_ids, detection_pred_ids = None, None
+            if 'glm' in pred_ids[0]:
+                glm_pred_ids = pred_ids[0]['glm']
+            if 'detection' in pred_ids[0]:
+                detection_pred_ids = pred_ids[0]['detection']
             glm_labels, detection_labels = label_ids
             return self.metrics(glm_pred_ids=glm_pred_ids, glm_labels=glm_labels, detection_pred_ids=detection_pred_ids, detection_labels=detection_labels)
         return compute
@@ -175,10 +180,18 @@ def preprocess_logits_for_metrics(logits, labels):
     Original Trainer may have a memory leak. 
     This is a workaround to avoid storing too many tensors that are not needed.
     """
-    lm_logits, detection_logits = logits['glm'], logits['detection']
-    detection_pred = torch.argmax(detection_logits, dim=-1)
-    glm_pred = torch.argmax(lm_logits, dim=-1)
-    return {'glm': glm_pred, 'detection': detection_pred}, labels
+    result = {}
+    glm_pred, detection_pred = None, None
+    if 'glm' in logits:
+        lm_logits = logits['glm']
+        glm_pred = torch.argmax(lm_logits, dim=-1)
+        result['glm'] = glm_pred
+    if 'detection' in logits:
+        detection_logits = logits['detection']
+        detection_pred = torch.argmax(detection_logits, dim=-1)
+        result['detection'] = detection_pred
+    
+    return result, labels
 
 
 class CorrectionGLMTrainer(TrainerBeta):
@@ -232,8 +245,8 @@ class CorrectionGLMTrainer(TrainerBeta):
         data_dir = self.settings.data_dir
         settings_list = [pretrained_model, model_type, num_labels, prompt, detection_results, data_dir]
         settings_str = '_'.join(settings_list)
-        hash_value = hash(settings_str)
-        hash_str = str(hash_value).replace('-', '0')
+        hash_value = hashlib.md5(settings_str.encode('utf-8')).hexdigest()
+        hash_str = str(hash_value)
         logger.info(f'Hash Code Key of Dataset: {hash_str}')
         return hash_str
     
@@ -339,6 +352,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         In load detection results mode, the corresponding results will be loaded.
         """
         if self.args.task_mode[-5:] == "train":
+            logger.info("Preparing train dataset transform...")
             if self.settings.detection_results['train']:
                 ## Using detections
                 assert self.settings.model_type != 'detection', "ModelSettingError: Loading detection results is meaningless when training detection model."
@@ -378,6 +392,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                     desc="Running preprocessing on train dataset",
                 )
         if self.args.task_mode in ["train", "eval"]:
+            logger.info("Preparing validation dataset transform...")
             if self.settings.detection_results['valid']:
                 ## Using detections
                 assert self.settings.model_type != 'detection', "ModelSettingError: Loading detection results is meaningless when evaluating detection model."
@@ -393,7 +408,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                 for column in columns:
                     if column not in reserved_columns:
                         removed_columns.append(column)
-                self.train_dataset = self.dataset['valid'].map(
+                self.valid_dataset = self.dataset['valid'].map(
                     self._get_train_preprocess_function_using_predictions(for_validation=True),
                     batched=True,
                     remove_columns=removed_columns,
@@ -413,7 +428,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                     batched=True,
                     remove_columns=removed_columns,
                     load_from_cache_file=self.settings.load_cache,
-                    cache_file_name=self._get_data_cache_name("valid_using_pred"),
+                    cache_file_name=self._get_data_cache_name("valid"),
                     desc="Running preprocessing on valid dataset"
                 )
 
@@ -490,7 +505,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             eval_dataset=self.valid_dataset if self.training_args.do_eval else None,
             tokenizer=self.tokenizer,
             data_collator=self.data_collator,
-            compute_metrics=CGLMMetrics(self.settings.num_labels, self.settings.loss_ignore_id).metrics_func(),
+            compute_metrics=CGLMMetrics(self.settings.model_type, self.settings.num_labels, self.settings.loss_ignore_id).metrics_func(),
             preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
         # # for i, batch in enumerate(trainer.get_eval_dataloader()):

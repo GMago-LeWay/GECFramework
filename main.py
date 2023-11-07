@@ -371,10 +371,8 @@ class ExperimentsOfGECBeta:
             load_key = 'test'
         elif self.args.task_mode == 'eval':
             load_key = 'valid'
-        # elif self.args.task_mode == 'eval_train':
-        #     load_key = 'train'
         else:
-            raise NotImplementedError()
+            load_key = None
         raw_dataset = raw_dataset_loader.get_dataset_map(split=load_key)
         logger.info(get_time() + f"Infer: Use model {config.name} at {self.args.load}, on dataset {self.args.dataset}")
         logger.info(f"Args: {self.args}; Config: {config}")
