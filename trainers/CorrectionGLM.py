@@ -553,26 +553,49 @@ class CorrectionGLMTrainer(TrainerBeta):
     def infer_on_dataset(self, split):
 
         # save settings
-        if split in ['valid', 'test']:
+        if split in ['train', 'valid']:
             save_dir = os.path.join(self.args.save_dir, split)
         else:
             save_dir = self.args.save_dir
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
+
+        if self.settings.model_type == "generate":
+            assert self.settings.detection_results[split], "Since it is a pure generative model, you should load detection results."
         
         # detection results load (2-stage method)
         if self.settings.detection_results[split]:
-            logger.info(f"loading first stage detection results from {self.settings.detection_results['infer']}")
+            logger.info(f"loading first stage detection results from {self.settings.detection_results[split]}")
             detection_results = json.load(open(self.settings.detection_results[split]))
-            # self.test_dataset is self.dataset['split']
-            self.test_dataset = self.dataset[split]
+            # test_dataset is self.dataset['split'], infer train mode: all split will be inferred, infer mode: split=test.
             # check id compatible
-            assert len(detection_results) == len(self.test_dataset), f"Uncompatible detection results from {self.settings.detection_results['infer']}"
+            assert len(detection_results) == len(self.dataset[split]), f"Uncompatible detection results from {self.settings.detection_results['infer']}"
             for i in range(len(detection_results)):
-                assert detection_results[i]["id"] == self.test_dataset[i]["id"], f"Uncompatible detection results from {self.settings.detection_results['infer']}"
+                assert detection_results[i]["id"] == self.dataset[split][i]["id"], f"Uncompatible detection results from {self.settings.detection_results['infer']}"
             # add masked text to test dataset and transform
-            self.test_dataset = self.test_dataset.add_column('masked_text', [item["masked_text"] for item in detection_results])
-            self.generation_test_dataset_transform()
+            # transform test dataset for generation
+            # load masked text: TODO Debug
+            # self.dataset[split] = self.dataset[split].add_column('masked_text', [item["masked_text"] for item in detection_results])
+            # reserved_columns = ['id', 'text', 'label']
+            # test_dataset_for_generation = []
+            # for i, item in tqdm(enumerate(self.dataset[split])):
+            #     result = self.data_processor.convert_masked_sentence_to_infer_example(item['text'], item['masked_text'])
+            #     for key in reserved_columns:
+            #         if key in item:
+            #             result[key] = item[key]
+            #     test_dataset_for_generation.append(result)
+            # load detections
+            self.test_dataset_transform(split)
+            self.test_dataset = self.test_dataset.add_column('detection_predictions', [item["detections"] for item in detection_results])
+            test_dataset_for_generation = []
+            reserved_columns = ['id', 'text', 'label']
+            for i, item in tqdm(enumerate(self.test_dataset)):
+                src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
+                result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, item['detection_predictions'])
+                for key in reserved_columns:
+                    if key in item:
+                        result[key] = item[key]
+                test_dataset_for_generation.append(result)
         
         # detection process (if no detection results are arranged)
         else:
@@ -594,7 +617,6 @@ class CorrectionGLMTrainer(TrainerBeta):
                 batch_size = len(prefix_length)
                 edit_label_predictions.extend([detection_predictions[i][prefix_prompt_length[i]:prefix_length[i]] for i in range(batch_size)])
             self.test_dataset = self.test_dataset.add_column('detection_predictions', edit_label_predictions)
-            test_dataset_for_generation = self.test_dataset
 
             if self.settings.model_type == 'detection':
                 logger.info("Warning: Because the detection model mode is chosen, The inference will be done under detection-only mode")
@@ -612,6 +634,17 @@ class CorrectionGLMTrainer(TrainerBeta):
                     save_items.append({"id": example_id, "masked_text": masked_text, "source_tokens": src_tokens, "detections": edit_label_predictions[i]})
                 json.dump(save_items, open(os.path.join(save_dir, 'detection_results.json'), 'w'), indent=4, ensure_ascii=False)
                 return []
+            
+            # transform test dataset for generation
+            test_dataset_for_generation = []
+            reserved_columns = ['id', 'text', 'label']
+            for i, item in tqdm(enumerate(self.test_dataset)):
+                src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
+                result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, item['detection_predictions'])
+                for key in reserved_columns:
+                    if key in item:
+                        result[key] = item[key]
+                test_dataset_for_generation.append(result)
 
         ## After detection, Preparing data for generation
         
@@ -620,16 +653,6 @@ class CorrectionGLMTrainer(TrainerBeta):
         self.construct_inference_model(os.path.join(self.args.load, 'pytorch_model.bin'))
         self.model.to(self.args.device)
         self.model.eval()
-
-        test_dataset_for_generation = []
-        reserved_columns = ['id', 'text', 'label']
-        for i, item in tqdm(enumerate(self.test_dataset)):
-            src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
-            result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, item['detection_predictions'])
-            for key in reserved_columns:
-                if key in item:
-                    result[key] = item[key]
-            test_dataset_for_generation.append(result)
 
         # generation settings 
         max_gen_len = self.settings.max_new_tokens
@@ -646,6 +669,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                 if id == self.tokenizer.mask_token_id:
                     mask_positions.append(idx)
             # generate until all mask is generated
+            # print(type(test_data['input_ids']))
             while (test_data['input_ids'] == self.tokenizer.mask_token_id).sum() != (test_data['input_ids'] == self.tokenizer.eop_token_id).sum():
                 input_ids_length = len(test_data['input_ids'])
                 input_ids = torch.LongTensor(test_data['input_ids']).to(self.args.device).unsqueeze(0)
@@ -904,6 +928,8 @@ class CorrectionGLMTrainer(TrainerBeta):
         self.model.eval()
         ## dataset
         # in eval mode, the true label information are required, so dataset transform is essential
+        # no detection results are allowed
+        assert self.settings.detection_results['train'] == self.settings.detection_results['test'] == self.settings.detection_results['valid'] == None
         self.train_dataset_transform()
         if self.args.task_mode == "eval_train":
             logger.info("Eval Train Mode, evaluate on train dataset...")
@@ -939,7 +965,9 @@ class CorrectionGLMTrainer(TrainerBeta):
         if self.args.task_mode == 'train':
             logger.info("Load complete model for CorrectionGLM to continue training.")
             path = os.path.join(save_dir, 'pytorch_model.bin')
-            self.model.load_state_dict(torch.load(path))
+            information = self.model.load_state_dict(torch.load(path), strict=False)
+            logger.info(information)
+
         else:
             if save_dir[-1] == '/':
                 save_dir = save_dir[:-1]
@@ -952,5 +980,6 @@ class CorrectionGLMTrainer(TrainerBeta):
             
             logger.info("Load complete model for CorrectionGLM.")
             path = os.path.join(save_dir, 'pytorch_model.bin')
-            self.model.load_state_dict(torch.load(path))
+            information = self.model.load_state_dict(torch.load(path))
+            logger.info(information)
             

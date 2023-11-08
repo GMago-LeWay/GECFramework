@@ -794,7 +794,7 @@ class Config:
             'lr': 2e-5,
             'weight_decay': 1e-4,
             'epoch': 5,
-            'warmup_steps': 1000,
+            'warmup_steps': 1000,           # 之前FCGEC训练为100
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
             'alpha': [1,2,2],  # [1,2,2], or [1,2]
@@ -826,15 +826,6 @@ class Config:
             'detection_only': False,
             'keep_threshold': None,
             'chinese_marker_substitution': True,
-            # 'generation_config': dict(
-            #     temperature=0.2,
-            #     top_k=10,
-            #     top_p=0.95,
-            #     do_sample=True,
-            #     num_beams=1,
-            #     repetition_penalty=1.3,
-            #     max_new_tokens=512,
-            # ),
             'max_new_tokens': 10,
 
         }

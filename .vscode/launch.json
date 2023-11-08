@@ -186,6 +186,23 @@
             ],
         },
         {
+            "name": "GLM_Temp",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model", "correctionglm",
+                "--task_mode", "infer",
+                "--dataset", "fcgec",
+                "--pre_save_dir", "infer_results",
+                "--load", "glm_results/correctionglm-fcgec-train-20231108-1547/checkpoint-3200",
+                "--device", "0",
+                "--devices", "1",
+            ],
+        }, 
+        {
             "name": "LLM_FangZheng",
             "type": "python",
             "request": "launch",

@@ -561,10 +561,10 @@ class GLMDataProcessor:
         # find [MASK]
         source_tokens = masked_src_tokens
         mask_tokens_position = []
-        for i, token in source_tokens:
+        for i, token in enumerate(source_tokens):
             if token == self.tokenizer.pad_token_id:
                 mask_tokens_position.append(i)
-        source_position_ids = list(range(len(source_tokens)))
+        source_position_ids = [list(range(len(source_tokens))), [0]*len(source_tokens)]
         source_length = len(source_tokens)
 
         # if theres a mask, add a <sop> token
@@ -572,7 +572,7 @@ class GLMDataProcessor:
             source_tokens = np.concatenate((source_tokens, [self.tokenizer.sop_token_id]), dtype=int)
             # loss_masks = np.ones(len(tokens), dtype=np.long)
             # loss_masks[:source_length] = 0
-            source_position_ids = np.concatenate((source_position_ids, [[mask_tokens_position[0]], [1]]), axis=1)
+            source_position_ids = np.concatenate((source_position_ids, [[mask_tokens_position[0]], [1]]), axis=1, dtype=int)
             
         example = {
             'input_ids': np.array(source_tokens, dtype=int), 
