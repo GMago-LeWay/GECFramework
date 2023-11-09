@@ -770,25 +770,25 @@ class Config:
 
             # pretrained model
             'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-large-chinese'),
-            'use_lora': False,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-10b-chinese'),
+            'use_lora': True,
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
 
             # model config
-            'torch_dtype': None,
+            'torch_dtype': torch.bfloat16,
             'load_in_8bit': False,
             'loss_ignore_id': -100,
             'loss_detach': False,
-            'bf16': False,
+            'bf16': True,
 
             # fixed parameters
-            'model_type': 'all',        # model type: all, detection, generate
+            'model_type': 'generate',        # model type: all, detection, generate
             'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
             'output_dropout_prob': 0.2,        # detection head dropout
             'logging_steps': 10,
 
             # parameters that are able to be tuned
-            'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+            'prompt': '请修正以下语句中的语法错误，并在后面给出正确的语句：',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
             'detection_loss_weight': 3,
             'gradient_accumulation_steps': 8,
             'lr': 2e-5,
@@ -805,7 +805,7 @@ class Config:
             'detection_results': {
                 'train': None,
                 'valid': None,
-                'test': None
+                'test': 'infer_results/correctionglm-mucgec-infer-20231109-0120/detection_results.json'
             },
             # detections of current best checkpoint 
             # 'glm_results/correctionglm-fcgec-eval_train-20231025-1407/detection_results.json'

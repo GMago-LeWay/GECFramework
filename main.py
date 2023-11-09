@@ -382,7 +382,7 @@ class ExperimentsOfGECBeta:
         train_to_be_init = get_train(model=self.args.model)
         trainer: TrainerBeta = train_to_be_init(args=self.args, settings=config, model=model, dataset=raw_dataset)
         trainer.load(self.args.load)
-        logger.info(f"Load Checkpoint from {self.args.load}")
+        logger.info(f"Load Checkpoint from {self.args.load} (Ignore when using lora)")
         if self.args.task_mode in ['infer', 'infer_train']:
             json_results = trainer.do_infer()
             prediction_saving(args=self.args, json_results=json_results)

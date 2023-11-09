@@ -544,11 +544,23 @@ class CorrectionGLMTrainer(TrainerBeta):
         """
         raise NotImplementedError()
     
-    def construct_inference_model(self, model_file):
-        del self.model
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(self.settings.pretrained_model, trust_remote_code=True)
-        match_information = self.model.load_state_dict(torch.load(model_file), strict=False)
-        logger.info(f"load checkpoint from {model_file}, with {match_information}")
+    def construct_inference_model(self):
+        logger.info("Start to construct generation model for inference:")
+        if self.settings.use_lora:
+            logger.info("Peft model will be merged and saved, and reload as seq2seq model.")
+            self.model = self.model.merge_and_unload()
+            model_file = os.path.join(self.args.load, 'merged_model.bin')
+            torch.save(self.model.state_dict(), model_file)
+            del self.model
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(self.settings.pretrained_model, trust_remote_code=True, torch_dtype=self.settings.torch_dtype)
+            match_information = self.model.load_state_dict(torch.load(model_file), strict=False)
+            logger.info(f"load checkpoint from {model_file}, with {match_information}")
+        else:
+            del self.model
+            model_file = os.path.join(self.args.load, 'pytorch_model.bin')
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(self.settings.pretrained_model, trust_remote_code=True, torch_dtype=self.settings.torch_dtype)
+            match_information = self.model.load_state_dict(torch.load(model_file), strict=False)
+            logger.info(f"load checkpoint from {model_file}, with {match_information}")
 
     def infer_on_dataset(self, split):
 
@@ -650,7 +662,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         
         logger.info("Using Detection results to generate dataset for mask generation:")
         logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.load}")
-        self.construct_inference_model(os.path.join(self.args.load, 'pytorch_model.bin'))
+        self.construct_inference_model()
         self.model.to(self.args.device)
         self.model.eval()
 
@@ -796,7 +808,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         
         logger.info("Using Detection results to generate dataset for mask generation:")
         logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.load}")
-        self.construct_inference_model(os.path.join(self.args.load, 'pytorch_model.bin'))
+        self.construct_inference_model()
         self.model.to(self.args.device)
         self.model.eval()
 
@@ -963,6 +975,9 @@ class CorrectionGLMTrainer(TrainerBeta):
 
     def load(self, save_dir: str):
         if self.args.task_mode == 'train':
+            if self.settings.use_lora:
+                logger.info("Lora model should have been loaded at the model construction.")
+                return
             logger.info("Load complete model for CorrectionGLM to continue training.")
             path = os.path.join(save_dir, 'pytorch_model.bin')
             information = self.model.load_state_dict(torch.load(path), strict=False)
@@ -977,7 +992,10 @@ class CorrectionGLMTrainer(TrainerBeta):
             presettings = json.load(open(config_file))
             for key in self.settings.load_config_keys:
                 self.settings[key] = presettings[key]
-            
+
+            if self.settings.use_lora:
+                logger.info("Lora model should have been loaded at the model construction.")
+                return
             logger.info("Load complete model for CorrectionGLM.")
             path = os.path.join(save_dir, 'pytorch_model.bin')
             information = self.model.load_state_dict(torch.load(path))
