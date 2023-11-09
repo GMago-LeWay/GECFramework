@@ -770,25 +770,25 @@ class Config:
 
             # pretrained model
             'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-10b-chinese'),
-            'use_lora': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-large-chinese'),
+            'use_lora': False,
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
 
             # model config
-            'torch_dtype': torch.bfloat16,
+            'torch_dtype': None,
             'load_in_8bit': False,
             'loss_ignore_id': -100,
             'loss_detach': False,
-            'bf16': True,
+            'bf16': False,
 
             # fixed parameters
-            'model_type': 'generate',        # model type: all, detection, generate
+            'model_type': 'all',        # model type: all, detection, generate
             'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
             'output_dropout_prob': 0.2,        # detection head dropout
             'logging_steps': 10,
 
             # parameters that are able to be tuned
-            'prompt': '请修正以下语句中的语法错误，并在后面给出正确的语句：',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+            'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
             'detection_loss_weight': 3,
             'gradient_accumulation_steps': 8,
             'lr': 2e-5,
@@ -805,11 +805,9 @@ class Config:
             'detection_results': {
                 'train': None,
                 'valid': None,
-                'test': 'infer_results/correctionglm-mucgec-infer-20231109-0120/detection_results.json'
+                'test': None,
             },
-            # detections of current best checkpoint 
-            # 'glm_results/correctionglm-fcgec-eval_train-20231025-1407/detection_results.json'
-            # 'glm_results/correctionglm-mucgec-eval_train-20231024-2312/detection_results.json',
+
             'max_train_source_length': 128,
             'max_eval_source_length': 256,
             'train_batch_size': 12,
