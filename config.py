@@ -782,7 +782,7 @@ class Config:
             'bf16': False,
 
             # fixed parameters
-            'model_type': 'all',        # model type: all, detection, generate
+            'model_type': 'generate',        # model type: all, detection, generate
             'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
             'output_dropout_prob': 0.2,        # detection head dropout
             'logging_steps': 10,
@@ -791,10 +791,10 @@ class Config:
             'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
             'detection_loss_weight': 3,
             'gradient_accumulation_steps': 8,
-            'lr': 2e-5,
+            'lr': 4e-5,
             'weight_decay': 1e-4,
-            'epoch': 5,
-            'warmup_steps': 1000,           # 之前FCGEC训练为100
+            'epoch': 20,
+            'warmup_steps': 400,           # 之前FCGEC训练为100
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
             'alpha': [1,2,2],  # [1,2,2], or [1,2]
@@ -805,7 +805,7 @@ class Config:
             'detection_results': {
                 'train': None,
                 'valid': None,
-                'test': None,
+                'test': 'infer_results/correctionglm-fcgec-infer-20231116-0010/detection_results.json',
             },
 
             'max_train_source_length': 128,
@@ -815,12 +815,12 @@ class Config:
             'detection_batch_size': 8,
 
             # evaluation config
-            'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 4000,  
+            'eval_step': 400,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 400,  
             'eval_key': 'eval_general_accuracy',
 
             # inference config
-            'load_config_keys': ['model_type', 'prompt', 'num_labels', 'alpha'],
+            'load_config_keys': ['model_type', 'prompt', 'num_labels'],
             'detection_only': False,
             'keep_threshold': None,
             'chinese_marker_substitution': True,

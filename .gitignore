@@ -1,6 +1,7 @@
 # Mine
 github/
 *results/
+results*
 scorers/
 fangzheng/
 wandb/

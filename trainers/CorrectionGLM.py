@@ -136,11 +136,11 @@ class CGLMMetrics:
             insert_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=insert_pred_weights)
             detection_geometric_accuracy = ( keep_accuracy*error_accuracy*insert_accuracy ) ** (1/3)
             return {'detection_accuracy': detection_accuracy, 'detection_geometric_accuracy': detection_geometric_accuracy,
-                    'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy, 'insert_accuracy': insert_accuracy}
+                    'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy, 'insert_accuracy': insert_accuracy, 'error_acc_sum': error_accuracy+insert_accuracy}
         else:
             detection_geometric_accuracy = ( keep_accuracy*error_accuracy ) ** (1/2)
             return {'detection_accuracy': detection_accuracy, 'detection_geometric_accuracy': detection_geometric_accuracy,
-                    'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy}
+                    'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy, 'error_acc_sum': error_accuracy}
         
     def metrics(self, glm_pred_ids, glm_labels, detection_pred_ids, detection_labels):
         if self.model_type == 'generate':
@@ -693,12 +693,20 @@ class CorrectionGLMTrainer(TrainerBeta):
                 attention_mask[:test_data['prefix_length'], :test_data['prefix_length']] = 1
                 attention_mask[test_data['prefix_length']:test_data['source_length'], :test_data['source_length']] = 1
                 attention_mask = torch.LongTensor(attention_mask).to(self.args.device).unsqueeze(0).unsqueeze(0)
-                outputs = self.model.generate(
-                    input_ids=input_ids, position_ids=position_ids, generation_attention_mask=attention_mask,
-                    max_new_tokens=max_gen_len, 
-                    eos_token_id=self.tokenizer.eop_token_id,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                )
+                try:
+                    outputs = self.model.generate(
+                        input_ids=input_ids, position_ids=position_ids, generation_attention_mask=attention_mask,
+                        max_new_tokens=max_gen_len, 
+                        eos_token_id=self.tokenizer.eop_token_id,
+                        pad_token_id=self.tokenizer.eos_token_id,
+                    )
+                except Exception as e:
+                    print(e)
+                    print(mask_positions)
+                    print(self.tokenizer.decode(input_ids[0].tolist()))
+                    print(input_ids.shape, input_ids)
+                    print(position_ids.shape, position_ids)
+                    exit()
                 new_input_ids = list(test_data['input_ids']) + outputs[0].tolist()[input_ids_length:]
                 if new_input_ids[-1] != self.tokenizer.eop_token_id:
                     new_input_ids.append(self.tokenizer.eop_token_id)
