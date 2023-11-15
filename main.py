@@ -23,11 +23,11 @@ def parse_args():
                         help='bert/softmaskedbert/stgjoint/seq2seq/seq2edit/gector/llm/chinese_llama/llama/llama_quant/chatglm/correctionglm')    
     parser.add_argument('--task_mode', type=str, default='train',
                         help='train/tune/test/infer/augmentation')  
-    parser.add_argument('--dataset', type=str, default='fcgec',
+    parser.add_argument('--dataset', type=str, default='mucgec',
                         help='hybridset/nlpcc2018task2/fangzhengspell/fangzhenggrammar/guangming/peopledaily/augment/fangzhengaugment/fangzhengdapei/fcgec/mucgec')  
-    parser.add_argument('--pre_save_dir', type=str, default='glm_results',
+    parser.add_argument('--save_root_dir', type=str, default='results_glm',
                         help='root path to save results.')
-    parser.add_argument('--devices', type=str, default='0,1',
+    parser.add_argument('--devices', type=str, default='0',
                         help='GPU Environment.')    
     parser.add_argument('--device', type=int, default=0,
                         help='GPU id.')
@@ -530,7 +530,7 @@ if __name__ == '__main__':
     args.device = 'cuda:'+ str(args.device) if args.device >= 0 else 'cpu'
     # set save directory
     time_str = time.strftime('%Y%m%d-%H%M',time.localtime())
-    args.save_dir = os.path.join(args.pre_save_dir, f'{args.model}-{args.dataset}-{args.task_mode}-{time_str}')
+    args.save_dir = os.path.join(args.save_root_dir, f'{args.model}-{args.dataset}-{args.task_mode}-{time_str}')
 
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)

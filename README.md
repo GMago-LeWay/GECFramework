@@ -26,7 +26,7 @@ main.py的args参数说明：
 - hybridset/fangzhengtest/peopledaily/augment
 - 数据集需要在config.py里指定目录
 
---pre_save_dir 结果存储的根目录，每次运行程序会产生一个模型-数据集-对应时间的目录，实验结果、测试与推断结果都会存储在这里
+--save_root_dir 结果存储的根目录，每次运行程序会产生一个模型-数据集-对应时间的目录，实验结果、测试与推断结果都会存储在这里
 
 --devices 使用的多卡环境，相当于CUDA_VISIBLE_DEVICES（某些可多卡训练的模型需要指定，e.g. seq2seq）
 
