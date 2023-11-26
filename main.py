@@ -20,11 +20,11 @@ import codecs
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='correctionglm',
-                        help='bert/softmaskedbert/stgjoint/seq2seq/seq2edit/gector/llm/chinese_llama/llama/llama_quant/chatglm/correctionglm')    
+                        help='bert/softmaskedbert/stgjoint/seq2seq/seq2edit/gector/llm/chinese_llama/llama/llama_quant/chatglm/correctionglm/seq2seqbeta/seq2span')    
     parser.add_argument('--task_mode', type=str, default='train',
                         help='train/tune/test/infer/augmentation')  
     parser.add_argument('--dataset', type=str, default='mucgec',
-                        help='hybridset/nlpcc2018task2/fangzhengspell/fangzhenggrammar/guangming/peopledaily/augment/fangzhengaugment/fangzhengdapei/fcgec/mucgec')  
+                        help='hybridset/nlpcc2018task2/fangzhengspell/fangzhenggrammar/guangming/peopledaily/augment/fangzhengaugment/fangzhengdapei/fcgec/mucgec/pretrain')  
     parser.add_argument('--save_root_dir', type=str, default='results_glm',
                         help='root path to save results.')
     parser.add_argument('--devices', type=str, default='0',
@@ -524,6 +524,8 @@ EXPERIMENTS = {
     'llama_quant': ExperimentsOfLLM,
     'chatglm': ExperimentsOfGEC,
     'correctionglm': ExperimentsOfGECBeta,
+    'seq2seqbeta': ExperimentsOfGECBeta,
+    'seq2span': ExperimentsOfGECBeta,
 }
 
 if __name__ == '__main__':

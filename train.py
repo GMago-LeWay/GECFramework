@@ -13,6 +13,8 @@ MODULE_MAP = {
     'llama_quant': ('trainers.Llama', 'LlamaTrainer'),
     'chatglm': ('trainers.ChatGLM', 'ChatGLMTrainer'),
     'correctionglm': ('trainers.CorrectionGLM', 'CorrectionGLMTrainer'),
+    'seq2seqbeta': ('trainers.Seq2SeqBeta', 'Seq2SeqBetaTrainer'),
+    'seq2span': ('trainers.Seq2Span', 'Seq2SpanTrainer'),
 }
 
 

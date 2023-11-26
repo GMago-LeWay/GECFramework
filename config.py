@@ -52,7 +52,9 @@ MODEL_CORR_DATA = {
     'seq2edit': 'mucgec_edit',
     'gector': 'gector_data',
     'chatglm': 'transformers',
-    'correctionglm': 'gec_glm',
+    'correctionglm': 'empty',
+    'seq2seqbeta': 'empty',
+    'seq2span': 'empty',
 }
 
 DATA_ROOT_DIR = '/home/liwei/workspace/datasets'
@@ -78,6 +80,8 @@ class Config:
             'llama_quant': self.__LLAMA_QUANT,
             'chatglm': self.__ChatGLM,
             'correctionglm': self.__CorrectionGLM,
+            'seq2seqbeta': self.__Seq2SeqBeta,
+            'seq2span': self.__Seq2Span,
             None: self.__NULL,
         }
 
@@ -105,7 +109,7 @@ class Config:
             'mucgec_edit': self.__MuCGEC_Edit,
             'gector_data': self.__GECToR_Data,
             'transformers': self.__TransformersData,
-            'gec_glm': self.__GEC_GLM_Data,
+            'empty': self.__Empty_Config,
 
             None: self.__NULL,
         }
@@ -780,21 +784,22 @@ class Config:
             'loss_ignore_id': -100,
             'loss_detach': False,
             'bf16': False,
+            'ds_config': None,
 
             # fixed parameters
-            'model_type': 'generate',        # model type: all, detection, generate
+            'model_type': 'all',        # model type: all, detection, generate
             'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
             'output_dropout_prob': 0.2,        # detection head dropout
             'logging_steps': 10,
 
             # parameters that are able to be tuned
             'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
-            'detection_loss_weight': 3,
+            'detection_loss_weight': 10,
             'gradient_accumulation_steps': 8,
-            'lr': 4e-5,
+            'lr': 1e-5,
             'weight_decay': 1e-4,
             'epoch': 20,
-            'warmup_steps': 400,           # 之前FCGEC训练为100
+            'warmup_steps': 4000,           # 之前FCGEC训练为100
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
             'alpha': [1,2,2],  # [1,2,2], or [1,2]
@@ -805,7 +810,7 @@ class Config:
             'detection_results': {
                 'train': None,
                 'valid': None,
-                'test': 'infer_results/correctionglm-fcgec-infer-20231116-0010/detection_results.json',
+                'test': None,
             },
 
             'max_train_source_length': 128,
@@ -815,14 +820,15 @@ class Config:
             'detection_batch_size': 8,
 
             # evaluation config
-            'eval_step': 400,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 400,  
+            'eval_step': 4000,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 4000,  
             'eval_key': 'eval_general_accuracy',
 
             # inference config
             'load_config_keys': ['model_type', 'prompt', 'num_labels'],
             'detection_only': False,
             'keep_threshold': None,
+            'num_beams': 3,
             'chinese_marker_substitution': True,
             'max_new_tokens': 10,
 
@@ -830,7 +836,127 @@ class Config:
 
         return NotImplementedError() if tune else Config
     
-    def __GEC_GLM_Data(self):
+    def __Seq2SeqBeta(self, tune):
+        Config = {
+            # identifier
+            'name': 'seq2seqbeta',
+
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'bart-large-chinese'),
+            'use_lora': False,
+            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
+
+            # model config
+            'torch_dtype': None,
+            'load_in_8bit': False,
+            'loss_ignore_id': -100,
+            'bf16': False,
+            'ds_config': None,
+
+            # parameters that are able to be tuned
+            # 'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+            'gradient_accumulation_steps': 8,
+            'lr': 1e-5,
+            'weight_decay': 1e-4,
+            'epoch': 20,
+            'warmup_steps': 4000,           # 之前FCGEC训练为100
+            'lr_scheduler': 'polynomial',
+            'save_strategy': 'epoch',
+
+            # data process parameters
+            'cache_dir': '.cache',
+            'load_cache': True,
+
+            'logging_steps': 10,
+            'max_train_source_length': 128,
+            'max_eval_source_length': 256,
+            'train_batch_size': 12,
+            'eval_batch_size': 8,
+            'detection_batch_size': 8,
+
+            # evaluation config
+            'eval_step': 4000,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 4000,  
+            'eval_key': 'eval_loss',
+
+            # inference config
+            'load_config_keys': ['model_type', 'prompt', 'num_labels'],
+            'num_beams': 12,
+            'max_new_tokens': 10,
+
+        }
+
+        return NotImplementedError() if tune else Config
+    
+    def __Seq2Span(self, tune):
+        Config = {
+            # identifier
+            'name': 'seq2span',
+
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'bart-large-chinese'),
+            'use_lora': False,
+            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
+
+            # model config
+            'torch_dtype': None,
+            'load_in_8bit': False,
+            'loss_ignore_id': -100,
+            'bf16': False,
+            'ds_config': None,
+
+            # fixed parameters
+            'model_type': 'all',        # model type: all, detection, generate
+            'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
+            'output_dropout_prob': 0.2,        # detection head dropout
+
+            # parameters that are able to be tuned
+            'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+            'detection_loss_weight': 10,
+            'gradient_accumulation_steps': 8,
+            'lr': 1e-5,
+            'weight_decay': 1e-4,
+            'epoch': 5,
+            'warmup_steps': 4000,     
+            'lr_scheduler': 'polynomial',
+            'save_strategy': 'epoch',
+            'alpha': [1,2,2],  # [1,2,2], or [1,2]
+
+            # data process parameters
+            'cache_dir': '.cache',
+            'load_cache': True,
+            'detection_results': {
+                'train': None,
+                'valid': None,
+                'test': None,
+            },
+
+            'logging_steps': 10,
+            'max_train_source_length': 128,
+            'max_eval_source_length': 256,
+            'train_batch_size': 12,
+            'eval_batch_size': 8,
+            'detection_batch_size': 8,
+
+            # evaluation config
+            'eval_step': 4000,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 4000,  
+            'eval_key': 'eval_general_accuracy',
+
+            # inference config
+            'load_config_keys': ['model_type', 'prompt', 'num_labels'],
+            'detection_only': False,
+            'keep_threshold': None,
+            'num_beams': 12,
+            'max_new_tokens': 10,
+
+        }
+
+        return NotImplementedError() if tune else Config
+    
+    def __Empty_Config(self):
         dataConfig = {
             # 'use_multi_append': False,      # use data where multi-append situation are split into multiple sentences.
         }

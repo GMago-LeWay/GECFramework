@@ -7,6 +7,7 @@ import os
 import json
 from difflib import SequenceMatcher
 import logging
+import evaluate
 
 logger = logging.getLogger(__name__)
 
@@ -551,6 +552,80 @@ class GECMetric:
         pred_texts = ["身体不错。", "我看建设这种机器是很值得的事情，所有的学校以该建设。"]
         trg_texts = ["身体不错。", "我看建设这种机器是很值得的事情，所有的学校应该建设。"]
         pprint(GECMetric.final_f1_score(src_texts, pred_texts, trg_texts, None))
+
+
+class DetectionCorrectionMetrics:
+    def __init__(self, model_type, labels_num=3, loss_ignore_id=-100) -> None:
+        assert labels_num in [2,3]
+        assert model_type in ['all', 'detection', 'generate']
+        self.model_type = model_type
+        self.labels_num = labels_num
+        self.loss_ignore_id = loss_ignore_id
+        self.accuracy_metric = evaluate.load("utils/accuracy")
+
+    def accuracy(self, references, predictions, weights):
+        if weights.sum() == 0:
+            return 0
+        else:
+            return self.accuracy_metric.compute(references=references, predictions=predictions, sample_weight=weights)['accuracy']
+        
+    def glm_accuracy(self, glm_pred_ids, glm_labels):
+        glm_pred_ids, glm_labels = glm_pred_ids.ravel(), glm_labels.ravel()
+        glm_pred_weights = (1 - (glm_labels == -100)*1).ravel()
+        glm_accuracy = self.accuracy(references=glm_labels, predictions=glm_pred_ids, weights=glm_pred_weights)
+        return glm_accuracy
+    
+    def detection_metrics(self, detection_pred_ids, detection_labels):
+        detection_pred_ids, detection_labels = detection_pred_ids.ravel(), detection_labels.ravel()
+        detection_pred_weights = (1 - (detection_labels == -100)*1).ravel()
+        keep_pred_weights = ((detection_labels==0)*1).ravel()
+        error_pred_weights = ((detection_labels==1)*1).ravel()
+        detection_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=detection_pred_weights)
+        keep_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=keep_pred_weights)
+        error_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=error_pred_weights)
+
+        if self.labels_num == 3:
+            insert_pred_weights = ((detection_labels==2)*1).ravel()
+            insert_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=insert_pred_weights)
+            detection_geometric_accuracy = ( keep_accuracy*error_accuracy*insert_accuracy ) ** (1/3)
+            return {'detection_accuracy': detection_accuracy, 'detection_geometric_accuracy': detection_geometric_accuracy,
+                    'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy, 'insert_accuracy': insert_accuracy, 'error_acc_sum': error_accuracy+insert_accuracy}
+        else:
+            detection_geometric_accuracy = ( keep_accuracy*error_accuracy ) ** (1/2)
+            return {'detection_accuracy': detection_accuracy, 'detection_geometric_accuracy': detection_geometric_accuracy,
+                    'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy, 'error_acc_sum': error_accuracy}
+        
+    def metrics(self, glm_pred_ids, glm_labels, detection_pred_ids, detection_labels):
+        if self.model_type == 'generate':
+            glm_accuracy = self.glm_accuracy(glm_pred_ids=glm_pred_ids, glm_labels=glm_labels)
+            return {'general_accuracy': glm_accuracy, 'glm_accuracy': glm_accuracy}
+        else:
+            detection_metrics = self.detection_metrics(detection_pred_ids=detection_pred_ids, detection_labels=detection_labels)
+            if self.model_type == 'detection':
+                detection_metrics['general_accuracy'] = detection_metrics['detection_geometric_accuracy']
+                return detection_metrics
+            else:
+                glm_accuracy = self.glm_accuracy(glm_pred_ids=glm_pred_ids, glm_labels=glm_labels)
+                ## avg of glm acc and balanced detecion acc
+                general_accuracy = (glm_accuracy*detection_metrics['detection_geometric_accuracy'])**0.5
+                ## avg of glm acc and detecion acc
+                geometric_accuracy = (glm_accuracy*detection_metrics['detection_accuracy'])**0.5
+                metrics = {'general_accuracy': general_accuracy, 'geometric_accuracy': geometric_accuracy, 'glm_accuracy': glm_accuracy,}
+                for key in detection_metrics:
+                    metrics[key] = detection_metrics[key]
+                return metrics
+
+    def metrics_func(self):
+        def compute(eval_predictions):
+            pred_ids, label_ids = eval_predictions.predictions, eval_predictions.label_ids
+            glm_pred_ids, detection_pred_ids = None, None
+            if 'glm' in pred_ids[0]:
+                glm_pred_ids = pred_ids[0]['glm']
+            if 'detection' in pred_ids[0]:
+                detection_pred_ids = pred_ids[0]['detection']
+            glm_labels, detection_labels = label_ids
+            return self.metrics(glm_pred_ids=glm_pred_ids, glm_labels=glm_labels, detection_pred_ids=detection_pred_ids, detection_labels=detection_labels)
+        return compute
 
 
 class CHERRANT:
