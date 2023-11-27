@@ -18,6 +18,7 @@ rouge
 sentencepiece
 opencc
 evaluate
+rouge_score>=0.1.2
 
 # GECToR need ...
 tensorboard

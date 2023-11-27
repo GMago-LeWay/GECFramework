@@ -77,9 +77,9 @@ class TrainerBeta:
         """
         raise NotImplementedError()
 
-    def do_test(self):
+    def do_eval(self):
         """
-        do test process on labeled dataset.
+        do eval process on labeled dataset.
         """
         raise NotImplementedError()
 

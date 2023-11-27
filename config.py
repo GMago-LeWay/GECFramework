@@ -843,7 +843,7 @@ class Config:
 
             # pretrained model
             'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'bart-large-chinese'),
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'bart-large-chinese'),      ## not support mBART
             'use_lora': False,
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
 
@@ -856,6 +856,7 @@ class Config:
 
             # parameters that are able to be tuned
             # 'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+            'source_prefix': '',
             'gradient_accumulation_steps': 8,
             'lr': 1e-5,
             'weight_decay': 1e-4,
@@ -867,21 +868,25 @@ class Config:
             # data process parameters
             'cache_dir': '.cache',
             'load_cache': True,
-
+            'label_smoothing_factor': 0.,
+            'padding': 'max_length',
+            'ignore_pad_token_for_loss': True,
             'logging_steps': 10,
             'max_train_source_length': 128,
             'max_eval_source_length': 256,
+            'max_train_target_length': 128,
+            'max_eval_target_length': 256,
             'train_batch_size': 12,
             'eval_batch_size': 8,
-            'detection_batch_size': 8,
 
             # evaluation config
             'eval_step': 4000,        # steps interval of evaluation, None: 1eval/epoch 
             'save_step': 4000,  
             'eval_key': 'eval_loss',
+            'predict_with_generate': False,
 
             # inference config
-            'load_config_keys': ['model_type', 'prompt', 'num_labels'],
+            'load_config_keys': ['source_prefix'],
             'num_beams': 12,
             'max_new_tokens': 10,
 
@@ -913,6 +918,7 @@ class Config:
             'output_dropout_prob': 0.2,        # detection head dropout
 
             # parameters that are able to be tuned
+            'source_prefix': '',
             'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
             'detection_loss_weight': 10,
             'gradient_accumulation_steps': 8,

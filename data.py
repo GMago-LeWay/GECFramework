@@ -1452,7 +1452,7 @@ def get_data(dataset_name: str, model_name: str=None):
         'mucgec_edit': MuCGECEditDataset,
         'joint': FCGEC,
         'gector_data': GECToRDataset,
-        'gec_glm': TransformersDataset,
+        'empty': TransformersDataset,
     }
 
     if model_name in MODEL_CORR_DATA:
