@@ -798,7 +798,7 @@ class Config:
             'gradient_accumulation_steps': 8,
             'lr': 1e-5,
             'weight_decay': 1e-4,
-            'epoch': 20,
+            'epoch': 5,
             'warmup_steps': 4000,           # 之前FCGEC训练为100
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
@@ -857,18 +857,19 @@ class Config:
             # parameters that are able to be tuned
             # 'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
             'source_prefix': '',
-            'gradient_accumulation_steps': 8,
-            'lr': 1e-5,
+            'gradient_accumulation_steps': 1,
+            'lr': 5e-6,
             'weight_decay': 1e-4,
-            'epoch': 20,
-            'warmup_steps': 4000,           # 之前FCGEC训练为100
+            'epoch': 5,
+            'warmup_steps': 2000,           # 之前FCGEC训练为100
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
 
             # data process parameters
             'cache_dir': '.cache',
             'load_cache': True,
-            'label_smoothing_factor': 0.,
+            'label_smoothing_factor': 0.1,
+            'lr_scheduler': 'polynomial',
             'padding': 'max_length',
             'ignore_pad_token_for_loss': True,
             'logging_steps': 10,
@@ -876,19 +877,19 @@ class Config:
             'max_eval_source_length': 256,
             'max_train_target_length': 128,
             'max_eval_target_length': 256,
-            'train_batch_size': 12,
-            'eval_batch_size': 8,
+            'train_batch_size': 128,
+            'eval_batch_size': 16,
 
             # evaluation config
-            'eval_step': 4000,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 4000,  
+            'eval_step': 3000,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 3000,  
             'eval_key': 'eval_loss',
             'predict_with_generate': False,
 
             # inference config
             'load_config_keys': ['source_prefix'],
             'num_beams': 12,
-            'max_new_tokens': 10,
+            'max_gen_len': 384,
 
         }
 

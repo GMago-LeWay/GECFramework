@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+from tqdm import tqdm
 import nltk
 from typing import Dict
 import numpy as np
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 transformers.utils.move_cache('/data/liwei/cache/huggingface/')
 
 class Seq2SeqBetaTrainer(TrainerBeta):
-    def __init__(self, args, settings, model, dataset: Dict[str, Dataset]) -> None:
+    def __init__(self, args, settings, model: BartForConditionalGeneration, dataset: Dict[str, Dataset]) -> None:
         super().__init__(args, settings, model, dataset)
         if 'bart-large-chinese' in settings.pretrained_model:
             self.tokenizer = BertTokenizer.from_pretrained(settings.pretrained_model)
@@ -48,7 +49,7 @@ class Seq2SeqBetaTrainer(TrainerBeta):
             overwrite_output_dir=True,
             remove_unused_columns=False,
             # include_inputs_for_metrics=True,
-            label_names=[''],
+            # label_names=[''],
             per_device_train_batch_size=settings.train_batch_size,
             per_device_eval_batch_size=settings.eval_batch_size,
             num_train_epochs=settings.epoch,
@@ -63,10 +64,11 @@ class Seq2SeqBetaTrainer(TrainerBeta):
             label_smoothing_factor=settings.label_smoothing_factor,
             bf16=settings.bf16,
             group_by_length=False,
+            optim='adamw_hf',
             gradient_accumulation_steps=settings.gradient_accumulation_steps,
             warmup_steps=settings.warmup_steps,
             weight_decay=settings.weight_decay,
-            # lr_scheduler_type=settings.lr_scheduler,
+            lr_scheduler_type=settings.lr_scheduler,
             metric_for_best_model=settings.eval_key,
             resume_from_checkpoint=args.resume,
         )
@@ -235,6 +237,14 @@ class Seq2SeqBetaTrainer(TrainerBeta):
 
             return preds, labels
 
+        def preprocess_logits_for_metrics(logits, labels):
+            """
+            Original Trainer may have a memory leak. 
+            This is a workaround to avoid storing too many tensors that are not needed.
+            """
+            result = torch.argmax(logits[0], dim=-1)
+            return result, labels
+
         def compute_metrics(eval_preds):
             preds, labels = eval_preds
             if isinstance(preds, tuple):
@@ -246,7 +256,7 @@ class Seq2SeqBetaTrainer(TrainerBeta):
             decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
             # Some simple post-processing
-            decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
+            # decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
 
             result = metric.compute(predictions=decoded_preds, references=decoded_labels, use_stemmer=True)
             result = {k: round(v * 100, 4) for k, v in result.items()}
@@ -272,7 +282,8 @@ class Seq2SeqBetaTrainer(TrainerBeta):
             eval_dataset=self.valid_dataset if training_args.do_eval else None,
             tokenizer=tokenizer,
             data_collator=data_collator,
-            compute_metrics=compute_metrics if training_args.predict_with_generate else None,
+            compute_metrics=compute_metrics,
+            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
 
         # Training
@@ -282,6 +293,7 @@ class Seq2SeqBetaTrainer(TrainerBeta):
                 checkpoint = training_args.resume_from_checkpoint
             elif last_checkpoint is not None:
                 checkpoint = last_checkpoint
+            self.save(save_dir=self.args.save_dir)
             train_result = trainer.train(resume_from_checkpoint=checkpoint)
             trainer.save_model()  # Saves the tokenizer too for easy upload
 
@@ -300,7 +312,32 @@ class Seq2SeqBetaTrainer(TrainerBeta):
         return super().do_eval()
     
     def do_infer(self):
-        return super().do_infer()
+        model: BartForConditionalGeneration = self.model
+        model.to(self.args.device)
+        model.eval()
+        results = []
+        logger.info("Generating...")
+        ## save real-time result one by one
+        f = open(os.path.join(self.args.save_dir, 'real-time-results.jsonl'), 'w')
+        for item in tqdm(self.dataset["test"]):
+            tokenized = self.tokenizer(item["text"])
+            outputs = model.generate(
+                input_ids=torch.tensor(tokenized["input_ids"]).to(self.args.device).unsqueeze(0),
+                # position_ids=torch.tensor(tokenized["position_ids"]).to(self.args.device).unsqueeze(0),
+                max_new_tokens=self.settings.max_gen_len,
+                num_beams=self.settings.num_beams,
+            )
+            gen_text = self.tokenizer.decode(outputs[0].tolist(), skip_special_tokens=True)
+            gen_text = gen_text.replace(' ', '')
+            if 'label' in item:
+                res = {"id": item["id"], "src": item["text"], "tgt": item["label"], "predict": gen_text}
+            else:
+                res = {"id": item["id"], "src": item["text"], "predict": gen_text}
+            f.write(json.dumps(res, ensure_ascii=False) + '\n')
+            results.append(res)
+
+        f.close()
+        return results
 
     def save(self, save_dir):
         if self.args.task_mode == 'train':

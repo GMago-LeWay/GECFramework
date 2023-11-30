@@ -161,6 +161,7 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
         # generation model
         if self.settings.model_type == 'generate':
             loss = lm_loss
+            logger.info("GLM Loss: %.4f" % (lm_loss))
             return ModelOutput(
                 loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
                 logits={'glm': lm_logits},
@@ -176,6 +177,7 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
             detection_loss = self.labeling_loss(logits.view(-1, self.settings.num_labels), detection_labels.view(-1))
             # detection model
             if self.settings.model_type == 'detection':
+                logger.info("Detection Loss: %.4f" % (detection_loss))
                 loss = detection_loss
                 return ModelOutput(
                     loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
@@ -184,6 +186,7 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
             # hybrid model
             else:
                 loss = lm_loss + self.settings.detection_loss_weight * detection_loss
+                logger.info("GLM Loss: %.4f, Detection Loss: %.4f, Detection Loss Weight: %.2f, Loss: %.4f" % (lm_loss, detection_loss, self.settings.detection_loss_weight, loss))
                 return ModelOutput(
                     loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
                     logits={'glm': lm_logits, 'detection': logits},

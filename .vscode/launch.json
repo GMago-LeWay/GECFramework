@@ -203,6 +203,23 @@
             ],
         }, 
         {
+            "name": "Seq2SeqNew_MuCGEC_infer",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model", "seq2seqbeta",
+                "--task_mode", "infer",
+                "--dataset", "mucgec",
+                "--save_root_dir", "results_infer",
+                "--device", "2",
+                "--devices", "0,1,2,3",
+                "--load", "results_glm/seq2seqbeta-mucgec-train-20231128-1119/checkpoint-12000",
+            ],
+        },
+        {
             "name": "LLM_FangZheng",
             "type": "python",
             "request": "launch",
