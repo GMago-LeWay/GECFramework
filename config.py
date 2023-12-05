@@ -44,6 +44,8 @@ DATA_DIR_NAME = {
     'fangzhengaugment': "FangZhengAugment",
     'fangzhengdapei': "FangZhengDapei",
     'pretrain': "PreTrainSetLarge",
+    'c4': "C4-200M",
+    'wilocness': "WILocness",
 }
 
 MODEL_CORR_DATA = {
@@ -52,9 +54,9 @@ MODEL_CORR_DATA = {
     'seq2edit': 'mucgec_edit',
     'gector': 'gector_data',
     'chatglm': 'transformers',
-    'correctionglm': 'empty',
-    'seq2seqbeta': 'empty',
-    'seq2span': 'empty',
+    'correctionglm': 'general',
+    'seq2seqbeta': 'general',
+    'seq2span': 'general',
 }
 
 DATA_ROOT_DIR = '/home/liwei/workspace/datasets'
@@ -109,7 +111,7 @@ class Config:
             'mucgec_edit': self.__MuCGEC_Edit,
             'gector_data': self.__GECToR_Data,
             'transformers': self.__TransformersData,
-            'empty': self.__Empty_Config,
+            'general': self.__Empty_Config,
 
             None: self.__NULL,
         }
@@ -775,61 +777,64 @@ class Config:
             # pretrained model
             'language_model': True,
             'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-large-chinese'),
-            'use_lora': False,
-            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
 
             # model config
             'torch_dtype': None,
-            'load_in_8bit': False,
-            'loss_ignore_id': -100,
-            'loss_detach': False,
+            'use_lora': False,
             'bf16': False,
             'ds_config': None,
+            'load_in_8bit': False,
 
-            # fixed parameters
+            # model parameters
             'model_type': 'all',        # model type: all, detection, generate
             'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
             'output_dropout_prob': 0.2,        # detection head dropout
-            'logging_steps': 10,
-
-            # parameters that are able to be tuned
-            'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
-            'detection_loss_weight': 10,
-            'gradient_accumulation_steps': 8,
-            'lr': 1e-5,
-            'weight_decay': 1e-4,
-            'epoch': 5,
-            'warmup_steps': 4000,           # 之前FCGEC训练为100
-            'lr_scheduler': 'polynomial',
-            'save_strategy': 'epoch',
-            'alpha': [1,2,2],  # [1,2,2], or [1,2]
+            'loss_ignore_id': -100,
+            'loss_detach': False,
 
             # data process parameters
             'cache_dir': '.cache',
             'load_cache': True,
+            'num_proc_trainset': None,
+            'max_train_source_length': 128,
+            'max_eval_source_length': 256,
+            'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
             'detection_results': {
                 'train': None,
                 'valid': None,
                 'test': None,
             },
 
-            'max_train_source_length': 128,
-            'max_eval_source_length': 256,
+            # data related train settings
+            'gradient_accumulation_steps': 10,
             'train_batch_size': 12,
             'eval_batch_size': 8,
             'detection_batch_size': 8,
 
+            # train settings
+            # parameters that are able to be tuned
+            'detection_loss_weight': 10,
+            'alpha': [1,2,2],  # [1,2,2], or [1,2]
+            'epoch': 5,
+            'warmup_steps': 2000,
+            'lr': 1e-5,
+            'lr_scheduler': 'polynomial',
+            'weight_decay': 1e-4,
+
             # evaluation config
-            'eval_step': 4000,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 4000,  
+            'logging_steps': 10,
+            'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 2000,  
+            'save_strategy': 'epoch',
+            'early_stop': None,
             'eval_key': 'eval_general_accuracy',
 
             # inference config
-            'load_config_keys': ['model_type', 'prompt', 'num_labels'],
             'detection_only': False,
+            'chinese_marker_substitution': True,
+            'load_config_keys': ['model_type', 'prompt', 'num_labels'],
             'keep_threshold': None,
             'num_beams': 3,
-            'chinese_marker_substitution': True,
             'max_new_tokens': 10,
 
         }

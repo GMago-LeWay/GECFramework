@@ -46,16 +46,20 @@ def parse_args():
 args = parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = args.devices
 os.environ["HF_DATASETS_CACHE"] = "/data/liwei/cache/"
+
 logger = logging.getLogger(__name__)
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
+import transformers
 from transformers import AutoTokenizer
 
+transformers.utils.move_cache('/data/liwei/cache/huggingface/')
+
 from utils import *
-from data import get_data, TransformersDataset
+from data import get_data, GeneralDataset
 from train import get_train
 from model import get_model
 from config import Config
@@ -341,7 +345,7 @@ class ExperimentsOfGECBeta:
         setup_seed(self.args.seed)
 
         # data settings
-        raw_dataset_loader: TransformersDataset = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
+        raw_dataset_loader: GeneralDataset = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
         raw_dataset = raw_dataset_loader.get_dataset_map(split=None)
         logger.info(get_time() + f"Train: Use model {config.name} at {self.args.load}, on dataset {self.args.dataset}")
         logger.info(f"Args: {self.args}; Config: {config}")
@@ -366,7 +370,7 @@ class ExperimentsOfGECBeta:
         setup_seed(self.args.seed)
 
         # data settings
-        raw_dataset_loader: TransformersDataset = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
+        raw_dataset_loader: GeneralDataset = get_data(self.args.dataset, self.args.model)(args=self.args, config=config)
         if self.args.task_mode == 'infer':
             load_key = 'test'
         elif self.args.task_mode == 'eval':

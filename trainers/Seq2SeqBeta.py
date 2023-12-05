@@ -28,8 +28,6 @@ from transformers.utils.versions import require_version
 
 logger = logging.getLogger(__name__)
 
-transformers.utils.move_cache('/data/liwei/cache/huggingface/')
-
 class Seq2SeqBetaTrainer(TrainerBeta):
     def __init__(self, args, settings, model: BartForConditionalGeneration, dataset: Dict[str, Dataset]) -> None:
         super().__init__(args, settings, model, dataset)

@@ -1,4 +1,7 @@
 import os
+
+os.environ["HF_DATASETS_CACHE"] = "/data/liwei/cache/"
+
 import json
 import logging
 import random
@@ -12,6 +15,8 @@ from tqdm import tqdm
 from copy import copy
 import traceback
 import scipy.io as sio
+import csv
+import glob
 
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
@@ -29,6 +34,10 @@ from dataset_provider.GECToR import DatasetCTC
 
 from utils.MuCGEC import DataTrainingArguments, load_json, FullTokenizer, convert_to_unicode
 from dataset_provider.FCGEC import TextWash, TaggerConverter, combine_insert_modify, convert_tagger2generator
+
+from dataset_wrapper.wrapper import BasicWrapper
+from dataset_wrapper.WILocnessWrapper import WILocnessWrapper
+from dataset_wrapper.C4Wrapper import C4Wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -255,10 +264,12 @@ class TextLabelDataset:
                     json.dump(Ids, f, indent=4)
 
 
-class TransformersDataset:
+class TransformersDatasetLegacy:
     def __init__(self, args, config) -> None:
         self.args = args
         self.config = config
+
+        logger.info("Legacy Warning: Transformers dataset will be removed in succeed version.")
 
         ## judge the status of datasets
         # well-split, to-be-split, corrupted, raw
@@ -1429,6 +1440,62 @@ class FangZhengAugment(TextLabelDataset):
         with open(self.file, "r") as f:
             data = json.load(f)
         return data
+    
+
+class GeneralDataset:
+    def __init__(self, args, config) -> None:
+        '''
+        Provide a standard seq2seq interface for all supported datasets.
+        '''
+        self.args = args
+        self.config = config
+
+        self.wrapper_map = {
+            'wilocness': WILocnessWrapper,
+            'c4': C4Wrapper,
+            'default': BasicWrapper,
+        }
+
+        if self.args.dataset.lower() in self.wrapper_map:
+            self.wrapper = self.wrapper_map[self.args.dataset.lower()](args, config)
+        else:
+            self.wrapper = self.wrapper_map['default'](args, config)
+
+
+    def get_dataset_map(self, split=False):
+        '''
+        Dynamic Load data split, if not identified, load all split.
+        {'train': (Iterable)Dataset, 'valid': (Iterable)Dataset, 'test': (Iterable)Dataset}
+        '''
+        if split:
+            assert split in ['train', 'valid', 'test']
+            dataset_map = {}
+            dataset_map[split] = self.wrapper.get_dataset(split=split)
+            # dataset_map['valid'] = self._get_dataset(split='valid')
+            for s in ['train', 'valid', 'test']:
+                if s not in dataset_map:
+                    dataset_map[s] = []
+            return dataset_map
+        else:
+            train_set = self.wrapper.get_dataset('train')
+            val_set = self.wrapper.get_dataset('valid')
+            test_set = self.wrapper.get_dataset('test')
+            return {'train': train_set, 'valid': val_set, 'test': test_set}
+        
+    def save_to_json(self):
+        train_data_file = os.path.join(self.config.data_dir, 'train.json')
+        valid_data_file = os.path.join(self.config.data_dir, 'valid.json')
+        test_data_file = os.path.join(self.config.data_dir, 'test.json')
+        assert not (os.path.exists(train_data_file) or os.path.exists(valid_data_file) or os.path.exists(test_data_file))
+        data_map = self.get_dataset_map()
+        train_set = [{"id": item["id"], "text": item["text"], "label": item["label"]} for item in data_map["train"]]
+        valid_set = [{"id": item["id"], "text": item["text"], "label": item["label"]} for item in data_map["valid"]]
+        test_set = [{"id": item["id"], "text": item["text"], "label": item["label"]} if "label" in data_map["test"].column_names 
+                    else {"id": item["id"], "text": item["text"]} for item in data_map["test"]]
+        json.dump(train_set, open(train_data_file, 'w'), ensure_ascii=False, indent=4)
+        json.dump(valid_set, open(valid_data_file, 'w'), ensure_ascii=False, indent=4)
+        json.dump(test_set, open(test_data_file, 'w'), ensure_ascii=False, indent=4)
+        logger.info(f"Dataset has been save to {train_data_file}, {valid_data_file}, {test_data_file}")
 
 
 def get_data(dataset_name: str, model_name: str=None):
@@ -1445,6 +1512,7 @@ def get_data(dataset_name: str, model_name: str=None):
         'fangzhengaugment': FangZhengAugment,
         'fangzhengdapei': TextLabelDataset,
         'pretrain': TextLabelDataset,
+        # 'c4': C4GEC,
     }
 
     SPECIAL_DATA_MAP = {
@@ -1452,7 +1520,7 @@ def get_data(dataset_name: str, model_name: str=None):
         'mucgec_edit': MuCGECEditDataset,
         'joint': FCGEC,
         'gector_data': GECToRDataset,
-        'empty': TransformersDataset,
+        'general': GeneralDataset,
     }
 
     if model_name in MODEL_CORR_DATA:
@@ -1465,13 +1533,32 @@ def get_data(dataset_name: str, model_name: str=None):
 
 
 if __name__ == "__main__":
-
-    dataset_name = 'mucgec'
-    config = Config('seq2seq', dataset_name, False).get_config()
-    data = get_data(dataset_name, 'seq2seq')(None, config)
-    data.process_raw_file()
+    # dataset_name = 'mucgec'
+    # config = Config('seq2seq', dataset_name, False).get_config()
+    # data = get_data(dataset_name, 'seq2seq')(None, config)
+    # data.process_raw_file()
 
     # dataset_name = 'mucgec_edit'
     # config = Config(None, dataset_name, False).get_config()
     # data = get_data(dataset_name)(None, config)
     # data.preprocess_data()
+    import transformers
+    transformers.utils.move_cache('/data/liwei/cache/huggingface/')
+
+    # class A:
+    #     dataset = 'wilocness'
+    #     model = 'seq2seqbeta'
+    # args = A()
+    # config = Config(args.model, args.dataset, False).get_config()
+    # data = get_data(args.dataset, args.model)(args, config)
+    # data.save_to_json()
+
+    class B:
+        dataset = 'c4'
+        model = 'seq2seqbeta'
+    args = B()
+    config = Config(args.model, args.dataset, False).get_config()
+    data = get_data(args.dataset, args.model)(args, config)
+    dataset_map = data.get_dataset_map()
+    print(dataset_map)
+    

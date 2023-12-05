@@ -22,6 +22,7 @@ from transformers import (
     BatchEncoding,
     default_data_collator,
     set_seed,
+    EarlyStoppingCallback,
 )
 from transformers.trainer_utils import get_last_checkpoint
 
@@ -31,8 +32,6 @@ from dataset_provider.CorrectionGLM import GLMDataProcessor
 from metrics import DetectionCorrectionMetrics
 
 logger = logging.getLogger(__name__)
-
-transformers.utils.move_cache('/data/liwei/cache/huggingface/')
 
 @dataclass
 class DataCollatorForGLMGEC:
@@ -131,6 +130,10 @@ class CorrectionGLMTrainer(TrainerBeta):
         self.data_collator = DataCollatorForGLMGEC(tokenizer=self.tokenizer, loss_ignore_id=self.data_processor._loss_ignore_id)
         # self.generation_data_collator = DataCollatorForGLMGECGeneration(tokenizer=self.tokenizer, loss_ignore_id=self.data_processor._loss_ignore_id)
 
+        self.callbacks = []
+        if self.settings.early_stop:
+            self.callbacks.append(EarlyStoppingCallback(self.settings.early_stop))
+
         # initialize config for transformers trainer
         self.training_args = TrainingArguments(
             seed=args.seed,
@@ -160,6 +163,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             weight_decay=settings.weight_decay,
             # lr_scheduler_type=settings.lr_scheduler,
             metric_for_best_model=settings.eval_key,
+            load_best_model_at_end=(self.settings.early_stop != None),
             resume_from_checkpoint=args.resume,
         )
         logger.info(self.training_args)
@@ -169,9 +173,10 @@ class CorrectionGLMTrainer(TrainerBeta):
         model_type = str(self.settings.model_type)
         num_labels = str(self.settings.num_labels)
         prompt = str(self.settings.prompt)
+        max_train_source_length = str(self.settings.max_train_source_length)
         detection_results = str(self.settings.detection_results['train']) + '_' + str(self.settings.detection_results['valid']) + '_' + str(self.settings.detection_results['test']) 
         data_dir = self.settings.data_dir
-        settings_list = [pretrained_model, model_type, num_labels, prompt, detection_results, data_dir]
+        settings_list = [pretrained_model, model_type, num_labels, prompt, max_train_source_length, detection_results, data_dir]
         settings_str = '_'.join(settings_list)
         hash_value = hashlib.md5(settings_str.encode('utf-8')).hexdigest()
         hash_str = str(hash_value)
@@ -302,6 +307,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                     remove_columns=removed_columns,
                     load_from_cache_file=self.settings.load_cache,
                     cache_file_name=self._get_data_cache_name("train_using_pred"),
+                    num_proc=self.settings.num_proc_trainset,
                     desc="Running preprocessing on train dataset",
                 )
             else:
@@ -317,6 +323,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                     remove_columns=removed_columns,
                     load_from_cache_file=self.settings.load_cache,
                     cache_file_name=self._get_data_cache_name("train"),
+                    num_proc=self.settings.num_proc_trainset,
                     desc="Running preprocessing on train dataset",
                 )
         if self.args.task_mode in ["train", "eval"]:
@@ -435,6 +442,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             data_collator=self.data_collator,
             compute_metrics=DetectionCorrectionMetrics(self.settings.model_type, self.settings.num_labels, self.settings.loss_ignore_id).metrics_func(),
             preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+            callbacks=self.callbacks,
         )
         # # for i, batch in enumerate(trainer.get_eval_dataloader()):
         # #     print(i, batch['input_ids'].size())

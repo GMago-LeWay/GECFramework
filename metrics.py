@@ -613,6 +613,8 @@ class DetectionCorrectionMetrics:
                 metrics = {'general_accuracy': general_accuracy, 'geometric_accuracy': geometric_accuracy, 'glm_accuracy': glm_accuracy,}
                 for key in detection_metrics:
                     metrics[key] = detection_metrics[key]
+                ## metirc for aggressive detection
+                metrics['ad_accuracy'] = metrics['error_acc_sum'] + glm_accuracy
                 return metrics
 
     def metrics_func(self):
