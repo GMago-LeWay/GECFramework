@@ -56,7 +56,7 @@ import torch
 import transformers
 from transformers import AutoTokenizer
 
-transformers.utils.move_cache('/data/liwei/cache/huggingface/')
+# transformers.utils.move_cache('/data/liwei/cache/huggingface/')
 
 from utils import *
 from data import get_data, GeneralDataset

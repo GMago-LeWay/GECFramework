@@ -46,6 +46,8 @@ DATA_DIR_NAME = {
     'pretrain': "PreTrainSetLarge",
     'c4': "C4-200M",
     'wilocness': "WILocness",
+    'fce': "FCE",
+    'lang8': "Lang8",
 }
 
 MODEL_CORR_DATA = {
@@ -776,7 +778,7 @@ class Config:
 
             # pretrained model
             'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-large-chinese'),
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-roberta-large'),
 
             # model config
             'torch_dtype': None,
@@ -795,6 +797,7 @@ class Config:
             # data process parameters
             'cache_dir': '.cache',
             'load_cache': True,
+            'streaming': False,
             'num_proc_trainset': None,
             'max_train_source_length': 128,
             'max_eval_source_length': 256,
@@ -814,9 +817,10 @@ class Config:
             # train settings
             # parameters that are able to be tuned
             'detection_loss_weight': 10,
-            'alpha': [1,2,2],  # [1,2,2], or [1,2]
-            'epoch': 5,
-            'warmup_steps': 2000,
+            'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
+            'epoch': 10,
+            'warmup_steps': 1000,
+            'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
             'lr': 1e-5,
             'lr_scheduler': 'polynomial',
             'weight_decay': 1e-4,
@@ -826,12 +830,12 @@ class Config:
             'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
             'save_step': 2000,  
             'save_strategy': 'epoch',
-            'early_stop': None,
+            'early_stop': 12,
             'eval_key': 'eval_general_accuracy',
 
             # inference config
             'detection_only': False,
-            'chinese_marker_substitution': True,
+            'chinese_marker_substitution': False,
             'load_config_keys': ['model_type', 'prompt', 'num_labels'],
             'keep_threshold': None,
             'num_beams': 3,

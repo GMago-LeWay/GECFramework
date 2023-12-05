@@ -5,46 +5,38 @@ import datasets
 
 
 _CITATION = """\
-@article{wi_locness,
-author = {Helen Yannakoudakis and Øistein E Andersen and Ardeshir Geranpayeh and Ted Briscoe and Diane Nicholls},
-title = {Developing an automated writing placement system for ESL learners},
-journal = {Applied Measurement in Education},
-volume = {31},
-number = {3},
-pages = {251-267},
-year  = {2018},
-doi = {10.1080/08957347.2018.1464447},
+@inproceedings{yannakoudakis-etal-2011-new,
+    title = "A New Dataset and Method for Automatically Grading {ESOL} Texts",
+    author = "Yannakoudakis, Helen  and
+      Briscoe, Ted  and
+      Medlock, Ben",
+    booktitle = "Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies",
+    month = jun,
+    year = "2011",
+    url = "https://aclanthology.org/P11-1019",
+    pages = "180--189",
 }
 """
 
 _DESCRIPTION = """\
-Write & Improve is an online web platform that assists non-native English students with their writing. Specifically, students from around the world submit letters, stories, articles and essays in response to various prompts, and the W&I system provides instant feedback. Since W&I went live in 2014, W&I annotators have manually annotated some of these submissions and assigned them a CEFR level.
-The LOCNESS corpus consists of essays written by native English students. It was originally compiled by researchers at the Centre for English Corpus Linguistics at the University of Louvain. Since native English students also sometimes make mistakes, we asked the W&I annotators to annotate a subsection of LOCNESS so researchers can test the effectiveness of their systems on the full range of English levels and abilities.
+The CLC FCE Dataset is a set of 1,244 exam scripts written by candidates sitting the Cambridge ESOL First Certificate 
+in English (FCE) examination in 2000 and 2001. The dataset exposes the sentence-level pre-tokenized M2 version, totaling 
+33236 sentences.
 """
 
-_HOMEPAGE = "https://www.cl.cam.ac.uk/research/nl/bea2019st/"
+_HOMEPAGE = ""
 
-_LICENSE = "other"
+_LICENSE = "Custom, allowed for non-commercial research and educational purposes"
 
 _URLS = {
-    "wi_locness": "https://www.cl.cam.ac.uk/research/nl/bea2019st/data/wi+locness_v2.1.bea19.tar.gz"
+    "clc_fce_bea19": "https://www.cl.cam.ac.uk/research/nl/bea2019st/data/fce_v2.1.bea19.tar.gz"
 }
 
 
-class WILocness(datasets.GeneratorBasedBuilder):
-    """Write&Improve and LOCNESS dataset for grammatical error correction. """
+class CLCFCE(datasets.GeneratorBasedBuilder):
+    """Cambridge Learner Corpus: First Certificate in English"""
 
     VERSION = datasets.Version("2.1.0")
-
-    BUILDER_CONFIGS = [
-        datasets.BuilderConfig(name="A", version=VERSION, description="CEFR level A"),
-        datasets.BuilderConfig(name="B", version=VERSION, description="CEFR level B"),
-        datasets.BuilderConfig(name="C", version=VERSION, description="CEFR level C"),
-        datasets.BuilderConfig(name="N", version=VERSION, description="Native essays from LOCNESS"),
-        datasets.BuilderConfig(name="all", version=VERSION, description="All training and validation data combined")
-    ]
-
-    DEFAULT_CONFIG_NAME = "all"
 
     def _info(self):
         features = datasets.Features(
@@ -71,43 +63,25 @@ class WILocness(datasets.GeneratorBasedBuilder):
         )
 
     def _split_generators(self, dl_manager):
-        urls = _URLS["wi_locness"]
+        urls = _URLS["clc_fce_bea19"]
         data_dir = dl_manager.manual_dir
         if data_dir is None:
             data_dir = dl_manager.download_and_extract(urls)
-        if self.config.name in {"A", "B", "C"}:
-            splits = [
-                datasets.SplitGenerator(
-                    name=datasets.Split.TRAIN,
-                    gen_kwargs={"file_path": os.path.join(data_dir, "wi+locness", "m2", f"{self.config.name}.train.gold.bea19.m2")},
-                ),
-                datasets.SplitGenerator(
-                    name=datasets.Split.VALIDATION,
-                    gen_kwargs={"file_path": os.path.join(data_dir, "wi+locness", "m2", f"{self.config.name}.dev.gold.bea19.m2")},
-                )
-            ]
-        elif self.config.name == "N":
-            splits = [
-                datasets.SplitGenerator(
-                    name=datasets.Split.VALIDATION,
-                    gen_kwargs={"file_path": os.path.join(data_dir, "wi+locness", "m2", "N.dev.gold.bea19.m2")},
-                )
-            ]
-        else:
-            splits = [
-                datasets.SplitGenerator(
-                    name=datasets.Split.TRAIN,
-                    gen_kwargs={"file_path": os.path.join(data_dir, "wi+locness", "m2", f"ABC.train.gold.bea19.m2")},
-                ),
-                datasets.SplitGenerator(
-                    name=datasets.Split.VALIDATION,
-                    gen_kwargs={"file_path": os.path.join(data_dir, "wi+locness", "m2", f"ABCN.dev.gold.bea19.m2")},
-                )
-            ]
+        return [
+            datasets.SplitGenerator(
+                name=datasets.Split.TRAIN,
+                gen_kwargs={"file_path": os.path.join(data_dir, "fce", "m2", "fce.train.gold.bea19.m2")},
+            ),
+            datasets.SplitGenerator(
+                name=datasets.Split.VALIDATION,
+                gen_kwargs={"file_path": os.path.join(data_dir, "fce", "m2", "fce.dev.gold.bea19.m2")},
+            ),
+            datasets.SplitGenerator(
+                name=datasets.Split.TEST,
+                gen_kwargs={"file_path": os.path.join(data_dir, "fce", "m2", "fce.test.gold.bea19.m2")},
+            ),
+        ]
 
-        return splits
-
-    # method parameters are unpacked from `gen_kwargs` as given in `_split_generators`
     def _generate_examples(self, file_path):
         skip_edits = {"noop", "UNK", "Um"}
         with open(file_path, "r", encoding="utf-8") as f:
@@ -160,7 +134,7 @@ class WILocness(datasets.GeneratorBasedBuilder):
                         "src_tokens": src_sent,
                         "tgt_tokens": tgt_sent,
                         "text": ' '.join(src_sent),
-                        "label": ' '.join(tgt_sent),          
+                        "label": ' '.join(tgt_sent),
                         "corrections": corrections
                     }
                     src_sent, tgt_sent, corrections, offset = None, None, [], 0

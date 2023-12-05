@@ -36,8 +36,10 @@ from utils.MuCGEC import DataTrainingArguments, load_json, FullTokenizer, conver
 from dataset_provider.FCGEC import TextWash, TaggerConverter, combine_insert_modify, convert_tagger2generator
 
 from dataset_wrapper.wrapper import BasicWrapper
-from dataset_wrapper.WILocnessWrapper import WILocnessWrapper
 from dataset_wrapper.C4Wrapper import C4Wrapper
+from dataset_wrapper.FCEWrapper import FCEWrapper
+from dataset_wrapper.Lang8Wrapper import Lang8Wrapper
+from dataset_wrapper.WILocnessWrapper import WILocnessWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -1451,8 +1453,10 @@ class GeneralDataset:
         self.config = config
 
         self.wrapper_map = {
-            'wilocness': WILocnessWrapper,
             'c4': C4Wrapper,
+            'lang8': Lang8Wrapper,
+            'fce': FCEWrapper,
+            'wilocness': WILocnessWrapper,
             'default': BasicWrapper,
         }
 

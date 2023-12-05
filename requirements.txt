@@ -6,7 +6,8 @@
 tqdm
 matplotlib
 pandas
-transformers==4.33.1
+datasets>=2.14.0
+transformers
 spacy
 # in some case, the language model in spacy must be downloaded
 bs4

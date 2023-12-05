@@ -7,10 +7,10 @@ import datasets
 logger = logging.getLogger(__name__)
 
 
-class C4Wrapper:
+class Lang8Wrapper:
     def __init__(self, args, config) -> None:
         '''
-        C4 only contain large dataset for training, please create valid.json by yourself
+        Lang8 only contain large dataset for training, please create valid.json by yourself
         Because this train set does not want to be evaluated or infered, item id is not provided in train set
         '''
         self.args = args
@@ -40,7 +40,7 @@ class C4Wrapper:
         # print("------------", self.config.data_dir)
         if split == 'train':
             data = datasets.load_dataset(
-                'dataset_wrapper/C4Builder.py', 
+                'dataset_wrapper/Lang8Builder.py', 
                 data_dir=self.config.data_dir, 
                 split='train',
                 streaming=self.streaming,

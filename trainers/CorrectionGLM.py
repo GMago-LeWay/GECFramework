@@ -56,14 +56,14 @@ class DataCollatorForGLMGEC:
         for sample in features:
             current_len = len(sample['input_ids'])
             assert current_len == len(sample['target_ids']) == len(sample['detection_labels']) == len(sample['position_ids'][0]) == len(sample['position_ids'][1])
-            pad_input_ids = sample['input_ids'] + [self.tokenizer.pad_token_id]*(max_len-current_len)
+            pad_input_ids = list(sample['input_ids']) + [self.tokenizer.pad_token_id]*(max_len-current_len)
             batch_input_ids.append(pad_input_ids)
-            pad_target_ids = sample['target_ids'] + [self.loss_ignore_id]*(max_len-current_len)
+            pad_target_ids = list(sample['target_ids']) + [self.loss_ignore_id]*(max_len-current_len)
             batch_target_ids.append(pad_target_ids)
-            pad_detection_labels = sample['detection_labels'] + [self.loss_ignore_id]*(max_len-current_len)
+            pad_detection_labels = list(sample['detection_labels']) + [self.loss_ignore_id]*(max_len-current_len)
             batch_detection_label_ids.append(pad_detection_labels)
-            pad_position_ids = sample['position_ids'][0] + [sample['position_ids'][0][-1]]*(max_len-current_len)
-            pad_block_ids = sample['position_ids'][1] + list(range(sample['position_ids'][1][-1]+1, sample['position_ids'][1][-1]+max_len-current_len+1))
+            pad_position_ids = list(sample['position_ids'][0]) + [sample['position_ids'][0][-1]]*(max_len-current_len)
+            pad_block_ids = list(sample['position_ids'][1]) + list(range(sample['position_ids'][1][-1]+1, sample['position_ids'][1][-1]+max_len-current_len+1))
             batch_position_ids.append([pad_position_ids, pad_block_ids])
             attention_mask = np.tril(np.ones((current_len, current_len), dtype=int))
             attention_mask[:sample['prefix_length'], :sample['prefix_length']] = 1
@@ -151,6 +151,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             num_train_epochs=settings.epoch,
             evaluation_strategy='steps',
             eval_steps=settings.eval_step,
+            max_steps=settings.max_steps if self.settings.streaming else -1,
             # eval_accumulation_steps=20,
             save_steps=settings.save_step,
             logging_steps=settings.logging_steps,
@@ -287,6 +288,8 @@ class CorrectionGLMTrainer(TrainerBeta):
         if self.args.task_mode[-5:] == "train":
             logger.info("Preparing train dataset transform...")
             if self.settings.detection_results['train']:
+                logger.info("Preparing train dataset transform with detection results.")
+                assert self.settings.streaming == False, 'Error: Streaming training set is not supported when loading detection results'
                 ## Using detections
                 assert self.settings.model_type != 'detection', "ModelSettingError: Loading detection results is meaningless when training detection model."
                 detection_results = json.load(open(self.settings.detection_results['train']))
@@ -310,22 +313,49 @@ class CorrectionGLMTrainer(TrainerBeta):
                     num_proc=self.settings.num_proc_trainset,
                     desc="Running preprocessing on train dataset",
                 )
-            else:
+            else:  # Standard train set
+                logger.info("Preparing standard train dataset transform.")
                 columns = self.dataset['train'].column_names
                 reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_length']
                 removed_columns = []
                 for column in columns:
                     if column not in reserved_columns:
                         removed_columns.append(column)
-                self.train_dataset = self.dataset['train'].map(
-                    self._get_train_preprocess_function(for_validation=False, detection_model=(self.settings.model_type == 'detection')),
-                    batched=True,
-                    remove_columns=removed_columns,
-                    load_from_cache_file=self.settings.load_cache,
-                    cache_file_name=self._get_data_cache_name("train"),
-                    num_proc=self.settings.num_proc_trainset,
-                    desc="Running preprocessing on train dataset",
-                )
+                if self.settings.streaming:
+                    if self.settings.load_cache:
+                        # Standard train set type 1: load cache as streaming dataset
+                        logger.info("Mode: Load cache as streaming dataset")
+                        cache_file_prefix = os.path.basename(self._get_data_cache_name("train")).replace('.arrow', '')
+                        cache_files = os.listdir(self.settings.cache_dir)
+                        correspond_cache_files = []
+                        for file in cache_files:
+                            if cache_file_prefix in file:
+                                correspond_cache_files.append(os.path.join(self.settings.cache_dir, file))
+                        assert correspond_cache_files, 'No cache file available. If you want to load cache as streaming dataset, please use non-streaming mode to construct the dataset and cache it.'
+                        # data_files = {"train": ["path/to/0.arrow", "path/to/1.arrow", ..., "path/to/n.arrow"]}
+                        self.train_dataset = datasets.load_dataset("arrow", data_files=correspond_cache_files, streaming=True)['train']
+                    else:
+                        # Standard train set type 2: Direct use streaming dataset
+                        logger.info("Mode: Directly use streaming dataset")
+                        assert type(self.dataset['train']) == datasets.iterable_dataset.IterableDataset, 'Error: You are trying to use streaming dataset, but current original train dataset is not an IterableDataset.'
+                        logger.info("Warning: Iterable dataset cannot be cached. It will be processed dynamically in training. Note in this mode max_steps must be set.")
+                        self.train_dataset = self.dataset['train'].map(
+                            self._get_train_preprocess_function(for_validation=False, detection_model=(self.settings.model_type == 'detection')),
+                            batched=True,
+                            remove_columns=removed_columns,
+                        )
+                else:
+                    # Standard train set type 3: Normal train dataset
+                    logger.info("Mode: Full dataset transform")
+                    self.train_dataset = self.dataset['train'].map(
+                        self._get_train_preprocess_function(for_validation=False, detection_model=(self.settings.model_type == 'detection')),
+                        batched=True,
+                        remove_columns=removed_columns,
+                        load_from_cache_file=self.settings.load_cache,
+                        cache_file_name=self._get_data_cache_name("train"),
+                        num_proc=self.settings.num_proc_trainset,
+                        desc="Running preprocessing on train dataset",
+                    )
         if self.args.task_mode in ["train", "eval"]:
             logger.info("Preparing validation dataset transform...")
             if self.settings.detection_results['valid']:
