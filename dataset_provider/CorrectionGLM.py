@@ -63,7 +63,7 @@ class TokenizerBasedTextEditProcessor:
         self.marker1_ids = self.tokenizer.convert_tokens_to_ids(self.marker1)
         self.marker2_ids = self.tokenizer.convert_tokens_to_ids(self.marker2)
 
-    def split_sentence(self, sentence: str, max_sentence_length: int = None) -> List[int]:
+    def split_sentence(self, sentence: str, max_sentence_length: int = None, enable_warning = False) -> List[int]:
         '''
         Use tokenizer to split sentence into a list of tokens
         '''
@@ -72,6 +72,8 @@ class TokenizerBasedTextEditProcessor:
                 max_sentence_length = self.max_sequence_length // 3
         tokens = self.tokenizer.encode(sentence)
         if max_sentence_length < len(tokens):
+            if enable_warning:
+                logger.info(f"Warning: The sentence token length {len(tokens)}, will be cut to {max_sentence_length}")
             return tokens[:max_sentence_length-1] + tokens[-1:]
         else:
             return tokens
@@ -532,8 +534,8 @@ class GLMDataProcessor:
         assert type(train_example['source_length']) == type(train_example['prefix_length']) == type(train_example['prefix_prompt_length']) == int
         return train_example
     
-    def convert_sentence_to_detection_example(self, src: str, max_sentence_length: int = None):
-        src_tokens = self.edit_extractor.split_sentence(src, max_sentence_length=max_sentence_length)
+    def convert_sentence_to_detection_example(self, src: str, max_sentence_length: int = None, enable_warning = False):
+        src_tokens = self.edit_extractor.split_sentence(src, max_sentence_length=max_sentence_length, enable_warning=enable_warning)
         temp_example = {
             'input_ids': np.array([], dtype=int), 
             'target_ids': np.array([], dtype=int), 

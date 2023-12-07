@@ -7,10 +7,10 @@ import datasets
 logger = logging.getLogger(__name__)
 
 
-class Lang8Wrapper:
+class NUCLEWrapper:
     def __init__(self, args, config) -> None:
         '''
-        Lang8 only contain large dataset for training, please create valid.json and test.json by yourself
+        NUCLE only contain large dataset for training, please create valid.json and test.json by yourself
         Because this train set does not want to be evaluated or infered, item id is not provided in train set
         '''
         self.args = args
@@ -40,7 +40,8 @@ class Lang8Wrapper:
         # print("------------", self.config.data_dir)
         if split == 'train':
             data = datasets.load_dataset(
-                'dataset_wrapper/Lang8Builder.py', 
+                'dataset_wrapper/NUCLEBuilder.py', 
+                "private",
                 data_dir=self.config.data_dir, 
                 split='train',
                 streaming=self.streaming,

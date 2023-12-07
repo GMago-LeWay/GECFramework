@@ -9,6 +9,10 @@ logger = logging.getLogger(__name__)
 
 class WILocnessWrapper:
     def __init__(self, args, config) -> None:
+        '''
+        BEA 19 WI&Locness dataset.
+        train, valid split available; test split is EQUAL to validation.
+        '''
         self.args = args
         self.config = config
 

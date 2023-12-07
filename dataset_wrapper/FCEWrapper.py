@@ -9,6 +9,9 @@ logger = logging.getLogger(__name__)
 
 class FCEWrapper:
     def __init__(self, args, config) -> None:
+        '''
+        Complete dataset of FCE with train, valid, test.
+        '''
         self.args = args
         self.config = config
 

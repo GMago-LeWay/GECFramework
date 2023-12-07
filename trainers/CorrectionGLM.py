@@ -240,7 +240,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             processed = {}
             for i in range(len(examples['text'])):
                 src = examples['text'][i]
-                result = self.data_processor.convert_sentence_to_detection_example(src)
+                result = self.data_processor.convert_sentence_to_detection_example(src, None, enable_warning=(self.args.task_mode == 'infer'))
                 if not processed:
                     for key in result:
                         processed[key] = []

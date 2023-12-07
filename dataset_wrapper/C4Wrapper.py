@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class C4Wrapper:
     def __init__(self, args, config) -> None:
         '''
-        C4 only contain large dataset for training, please create valid.json by yourself
+        C4 only contain large dataset for training, please create valid.json and test.json by yourself
         Because this train set does not want to be evaluated or infered, item id is not provided in train set
         '''
         self.args = args

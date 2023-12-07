@@ -47,7 +47,9 @@ DATA_DIR_NAME = {
     'c4': "C4-200M",
     'wilocness': "WILocness",
     'fce': "FCE",
+    'nucle': "NUCLE",
     'lang8': "Lang8",
+    'clang8': "clang8",
 }
 
 MODEL_CORR_DATA = {
@@ -830,11 +832,12 @@ class Config:
             'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
             'save_step': 2000,  
             'save_strategy': 'epoch',
-            'early_stop': 12,
+            'early_stop': 15,
             'eval_key': 'eval_general_accuracy',
 
             # inference config
             'detection_only': False,
+            'test_split': False,
             'chinese_marker_substitution': False,
             'load_config_keys': ['model_type', 'prompt', 'num_labels'],
             'keep_threshold': None,
@@ -866,11 +869,13 @@ class Config:
             # parameters that are able to be tuned
             # 'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
             'source_prefix': '',
-            'gradient_accumulation_steps': 1,
-            'lr': 5e-6,
+            'gradient_accumulation_steps': 8,
+            'lr': 2e-5,
             'weight_decay': 1e-4,
-            'epoch': 5,
-            'warmup_steps': 2000,           # 之前FCGEC训练为100
+            'epoch': 2,
+            'train_batch_size': 16,
+            'eval_batch_size': 16,
+            'warmup_steps': 1000,           # 之前FCGEC训练为100
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
 
@@ -886,12 +891,10 @@ class Config:
             'max_eval_source_length': 256,
             'max_train_target_length': 128,
             'max_eval_target_length': 256,
-            'train_batch_size': 128,
-            'eval_batch_size': 16,
 
             # evaluation config
-            'eval_step': 3000,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 3000,  
+            'eval_step': 4000,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 4000,  
             'eval_key': 'eval_loss',
             'predict_with_generate': False,
 

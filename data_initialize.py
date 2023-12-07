@@ -197,6 +197,19 @@ def cherrant_gold_labels(dataset_dir='', seed=20):
         valid_labels[i]['label'] = valid_data[i]['label']
     json.dump(valid_labels, open(os.path.join(save_dir, 'valid.json'), 'w'), ensure_ascii=False, indent=4)
 
+
+def merge_dataset(dataset_names, load_model='correctionglm'):
+    for dataset in dataset_names:
+        class A:
+            dataset = dataset
+            model = 'seq2seqbeta'
+        args = A()
+        config = Config(args.model, args.dataset, False).get_config()
+        data = get_data(args.dataset, args.model)(args, config)
+        dataset_map = data.get_dataset_map()
+
+
+
 if __name__ == "__main__":
     # setup_seed(111)
     # preprocess_stgjoint('mucgec')

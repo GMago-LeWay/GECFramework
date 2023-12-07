@@ -193,6 +193,8 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
                 loss = lm_loss + self.settings.detection_loss_weight * detection_loss
                 if self.print and self.steps % self.print_interval == 0:
                     logger.info("GLM Loss: %.4f, Detection Loss: %.4f, Detection Loss Weight: %.2f, Loss: %.4f" % (lm_loss, detection_loss, self.settings.detection_loss_weight, loss))
+                if detection_loss == torch.nan or lm_loss == torch.nan:
+                    logger.info("Warning: Nan in loss.")
                 return ModelOutput(
                     loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
                     logits={'glm': lm_logits, 'detection': logits},
