@@ -198,16 +198,147 @@ def cherrant_gold_labels(dataset_dir='', seed=20):
     json.dump(valid_labels, open(os.path.join(save_dir, 'valid.json'), 'w'), ensure_ascii=False, indent=4)
 
 
-def merge_dataset(dataset_names, load_model='correctionglm'):
-    for dataset in dataset_names:
+def merge_dataset(
+        dataset_names_and_split=[
+            ('fce', 'all'),
+            ('nucle', 'train'),
+            ('wilocness', 'train'),
+        ], 
+        load_model='correctionglm',
+        valid_json_to_copy='',
+        test_json_to_copy='',
+        shuffle_seed=None,
+        save_dir='../datasets/EnglishHybrid'
+    ):
+    '''
+    Merge train set of dataset.
+    ONLY text, label, id will be retained.
+    '''
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    train_file = os.path.join(save_dir, 'train.json')
+    valid_file = os.path.join(save_dir, 'valid.json')
+    test_file = os.path.join(save_dir, 'test.json')
+    description_file = os.path.join(save_dir, 'description.txt')
+    train_set = []
+
+    desc = open(description_file, 'w')
+    desc.write(
+        json.dumps(
+            {
+                'train data source': dataset_names_and_split,
+                'dataloader(TransformersDataset)': load_model,
+                'valid data source': valid_json_to_copy,
+                'test data source': test_json_to_copy,
+                'shuffle_seed': shuffle_seed,
+                'save directory': save_dir
+            },
+            ensure_ascii=False,
+            indent=4,
+        ) + '\n'
+    )
+
+    # get train set
+    for dataset_name, split in dataset_names_and_split:
+        assert split in ['train', 'all']
+        dataset_name = dataset_name.lower()
         class A:
-            dataset = dataset
-            model = 'seq2seqbeta'
+            dataset = dataset_name
+            model = load_model
         args = A()
         config = Config(args.model, args.dataset, False).get_config()
         data = get_data(args.dataset, args.model)(args, config)
         dataset_map = data.get_dataset_map()
 
+        # single split
+        if split in ['train', 'valid', 'test']:
+            current_dataset = dataset_map[split]
+            max_idx = 0
+            for i, item in enumerate(current_dataset):
+                train_set.append(
+                    {
+                        "id": f"{i}_{dataset_name}_{split}",
+                        "text": item["text"],
+                        "label": item["label"],
+                    }
+                )
+                max_idx = i
+            desc.write(f"{dataset_name} {split} num: {max_idx+1}\n")
+
+        # all mode
+        if split == 'all':
+            for cur_split in ['train', 'valid', 'test']:
+                current_dataset = dataset_map[cur_split]
+                max_idx = 0
+                for i, item in enumerate(current_dataset):
+                    train_set.append(
+                        {
+                            "id": f"{i}_{dataset_name}_{cur_split}",
+                            "text": item["text"],
+                            "label": item["label"],
+                        }
+                    )
+                    max_idx = i
+                desc.write(f"{dataset_name} {cur_split} num: {max_idx+1}\n")
+
+    # shuffle and save train set
+    if shuffle_seed:
+        random.seed(shuffle_seed)
+        random.shuffle(train_set)
+    json.dump(train_set, open(train_file, 'w'), ensure_ascii=False, indent=4)
+
+    # copy valid set and test set by instructed file
+    os.system(f"cp {valid_json_to_copy} {valid_file}")
+    os.system(f"cp {test_json_to_copy} {test_file}")
+
+    desc.close()
+
+
+def get_english_test_data(
+        conll_m2_file='utils/m2scorer/official-2014.combined.m2', 
+        bea19_input_file='../datasets/WILocness/wi+locness/test/ABCN.test.bea19.orig', 
+        save_dir_list=[]):
+    
+    test_data_list = []
+
+    # CoNLL14 data, item id {i}_conll14
+    with open(conll_m2_file, 'r', encoding="utf-8") as f:
+        idx_ex = 0
+        src_sent, src_text = None, None
+        for idx_line, _line in enumerate(f):
+            line = _line.strip()
+            if len(line) > 0:
+                prefix, remainder = line[0], line[2:]
+                if prefix == "S":
+                    src_text = remainder
+                    src_sent = remainder.split(" ")
+                else:
+                    pass
+            else:  # empty line, indicating end of example
+                assert src_text != None
+                test_data_list.append({
+                    "id": f'{idx_ex}_conll14',
+                    "text": src_text,
+                    "src_tokens": src_sent,
+                })
+                src_sent, src_text = None, None
+                idx_ex += 1
+
+    # BEA-19 test data(W&I Locness test data) item id {i}_BEA19
+    BEA19_texts = open(bea19_input_file, 'r', encoding="utf-8").readlines()
+    for i, line in enumerate(BEA19_texts):
+        test_data_list.append(
+            {
+                "id": f'{i}_bea19',
+                "text": line.strip(),
+                "src_tokens": line.strip().split(" "),
+            }
+        )
+
+    for dir in save_dir_list:
+        test_file = os.path.join(dir, 'test.json')
+        json.dump(test_data_list, open(test_file, 'w'), ensure_ascii=False, indent=4)
 
 
 if __name__ == "__main__":
@@ -225,4 +356,32 @@ if __name__ == "__main__":
     # convert_fcgec_seq2seq()
     # prepocess_mucgec()
     
-    cherrant_gold_labels(dataset_dir='../datasets/PreTrainSet')
+    # cherrant_gold_labels(dataset_dir='../datasets/PreTrainSet')
+
+    # process valid data
+
+    # process test data of English GEC, first part is CoNLL14, second part is BEA19
+    get_english_test_data(
+        conll_m2_file='utils/m2scorer/official-2014.combined.m2', 
+        bea19_input_file='../datasets/WILocness/wi+locness/test/ABCN.test.bea19.orig', 
+        save_dir_list=[
+            '../datasets/C4-200M',
+            '../datasets/Lang8',
+            '../datasets/clang8',
+            '../datasets/NUCLE',
+            '../datasets/WILocness',
+        ]
+    )
+
+    merge_dataset(
+        dataset_names_and_split=[
+            ('fce', 'all'),
+            ('nucle', 'train'),
+            ('wilocness', 'train'),
+        ], 
+        load_model='correctionglm',
+        valid_json_to_copy='../datasets/WILocness/valid.json',
+        test_json_to_copy='../datasets/WILocness/test.json',
+        shuffle_seed=None,
+        save_dir='../datasets/EnglishHybrid'
+    )

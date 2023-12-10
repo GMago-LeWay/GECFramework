@@ -780,7 +780,7 @@ class Config:
 
             # pretrained model
             'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-roberta-large'),
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-large-chinese'),
 
             # model config
             'torch_dtype': None,
@@ -818,8 +818,8 @@ class Config:
 
             # train settings
             # parameters that are able to be tuned
-            'detection_loss_weight': 10,
-            'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
+            'detection_loss_weight': 7,
+            'alpha': [1, 3, 3],  # [1,2,2], or [1,2]
             'epoch': 10,
             'warmup_steps': 1000,
             'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
@@ -832,18 +832,18 @@ class Config:
             'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
             'save_step': 2000,  
             'save_strategy': 'epoch',
-            'early_stop': 15,
-            'eval_key': 'eval_general_accuracy',
+            'early_stop': 10,
+            'eval_key': 'eval_ad_accuracy',
 
             # inference config
             'detection_only': False,
             'test_split': False,
-            'chinese_marker_substitution': False,
+            'post_process': ['cn_marker'],       # Please refer postprocess to get functions: 'cn_marker'
+            # 'chinese_marker_substitution': True,
             'load_config_keys': ['model_type', 'prompt', 'num_labels'],
             'keep_threshold': None,
             'num_beams': 3,
             'max_new_tokens': 10,
-
         }
 
         return NotImplementedError() if tune else Config

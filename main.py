@@ -16,13 +16,23 @@ from tqdm import tqdm
 import zipfile
 import codecs
 
+class TaskMode:
+    augmentation = 'augmentation'
+    train = 'train'
+    eval = 'eval'
+    infer = 'infer'
+    eval_train = 'eval_train'
+    infer_train = 'infer_train'
+    train_and_infer = 'train_infer'
+    train_and_eval_and_infer = 'train_eval_infer'
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='correctionglm',
                         help='bert/softmaskedbert/stgjoint/seq2seq/seq2edit/gector/llm/chinese_llama/llama/llama_quant/chatglm/correctionglm/seq2seqbeta/seq2span')    
     parser.add_argument('--task_mode', type=str, default='train',
-                        help='train/tune/test/infer/augmentation')  
+                        help=f'{TaskMode.train}/{TaskMode.eval}/{TaskMode.infer}/{TaskMode.eval_train}/{TaskMode.infer_train}/{TaskMode.train_and_infer}/{TaskMode.train_and_eval_and_infer}/{TaskMode.augmentation}')  
     parser.add_argument('--dataset', type=str, default='mucgec',
                         help='hybridset/nlpcc2018task2/fangzhengspell/fangzhenggrammar/guangming/peopledaily/augment/fangzhengaugment/fangzhengdapei/fcgec/mucgec/pretrain')  
     parser.add_argument('--save_root_dir', type=str, default='results_glm',
@@ -61,8 +71,9 @@ from transformers import AutoTokenizer
 from utils import *
 from data import get_data, GeneralDataset
 from train import get_train
+from postprocess import PostProcess
 from model import get_model
-from config import Config
+from config import Storage, Config
 from trainers.base import Trainer, TrainerBeta
 
 
@@ -94,11 +105,12 @@ def setup_log(args):
 
 
 def basic_saving(args, json_results):
-    save_path = os.path.join(args.save_dir, f'{args.model}-{args.dataset}-{args.task_mode}.json')
+    save_dir = args.save_dir
+    save_path = os.path.join(save_dir, f'{args.model}-{args.dataset}-{args.task_mode}.json')
     with codecs.open(save_path, "w", "utf-8") as f:
         json.dump(json_results, f, ensure_ascii=False, indent=4)
 
-    save_txt = os.path.join(args.save_dir, f'{args.model}-{args.dataset}-{args.task_mode}.txt')
+    save_txt = os.path.join(save_dir, f'{args.model}-{args.dataset}-{args.task_mode}.txt')
     with codecs.open(save_txt, "w", "utf-8") as f:
         for item in json_results:
             if "tgt" in item:
@@ -112,15 +124,14 @@ def prediction_saving(args, json_results):
     """
     In infer task, some dataset requires a specific version of results to evaluate, this function will do the formatting.
     """
-    basic_saving(args, json_results)
-
+    save_dir = args.save_dir
     ## MuCGEC output
     if args.dataset == 'mucgec':
-        save_txt = os.path.join(args.save_dir, f'MuCGEC_test.txt')
+        save_txt = os.path.join(save_dir, f'MuCGEC_test.txt')
         with codecs.open(save_txt, "w", "utf-8") as f:
             for item in json_results:
                 f.write("%s\t%s\t%s\n" % (item["id"], item["src"], item["predict"]))
-        with zipfile.ZipFile(os.path.join(args.save_dir, 'submit.zip'), mode='w') as zipf:
+        with zipfile.ZipFile(os.path.join(save_dir, 'submit.zip'), mode='w') as zipf:
             zipf.write(save_txt, 'MuCGEC_test.txt')
     
     ## FCGEC output
@@ -129,10 +140,10 @@ def prediction_saving(args, json_results):
         for item in json_results:
             error_flag = 1 if item["src"] != item["predict"] else 0
             fcgec_json[item['id']] = {"error_flag": error_flag, "error_type": "IWO", "correction": item["predict"]}
-        fcgec_path = os.path.join(args.save_dir, 'predict.json')
+        fcgec_path = os.path.join(save_dir, 'predict.json')
         with codecs.open(fcgec_path, "w", "utf-8") as f:
             json.dump(fcgec_json, f, ensure_ascii=False, indent=4)      
-        with zipfile.ZipFile(os.path.join(args.save_dir, 'predict.zip'), mode='w') as zipf:
+        with zipfile.ZipFile(os.path.join(save_dir, 'predict.zip'), mode='w') as zipf:
             zipf.write(fcgec_path, 'predict.json')
 
 
@@ -361,9 +372,8 @@ class ExperimentsOfGECBeta:
         # save result
         logger.info(get_time() + 'Result：%s' % best_score)
         # # do test
-        # trainer.load(self.args.save_dir)
-        # test_results = trainer.do_test()
-        return best_score
+        best_checkpoint = trainer.get_best_checkpoint_dir()
+        return best_checkpoint
 
     def run_infer(self, config):
         # only inferring
@@ -389,13 +399,36 @@ class ExperimentsOfGECBeta:
         logger.info(f"Load Checkpoint from {self.args.load} (Ignore when using lora)")
         if self.args.task_mode in ['infer', 'infer_train']:
             json_results = trainer.do_infer()
-            prediction_saving(args=self.args, json_results=json_results)
+            process = PostProcess(self.args, config, json_results, 'test')
+            process.post_process_and_save()
         elif self.args.task_mode in ['eval', 'eval_train']:
             json_results = trainer.do_eval()
-            basic_saving(args=self.args, json_results=json_results)
+            process = PostProcess(self.args, config, json_results, 'valid')
+            process.basic_saving()
         else:
             raise NotImplementedError()
         
+        return json_results
+    
+    def run_combine(self, config):
+        assert self.args.task_mode in [TaskMode.train_and_infer, TaskMode.train_and_eval_and_infer]
+        original_task_mode = str(self.args.task_mode)
+        self.args.task_mode = TaskMode.train
+        logger.info("All mode. Begin with train mode.")
+        best_checkpoint = self.run(config=Storage(config))
+        logger.info(f"Training COMPLETE. Best model: {best_checkpoint}")
+
+        if original_task_mode == TaskMode.train_and_eval_and_infer:
+            logger.info("Start to evaluate on train set and validation set.")
+            self.args.load = best_checkpoint
+            self.args.task_mode = TaskMode.eval_train
+            json_results = self.run_infer(Storage(config))
+            logger.info(f"Evaluation COMPLETE.")
+
+        logger.info("End with infer mode.")
+        self.args.load = best_checkpoint
+        self.args.task_mode = TaskMode.infer
+        json_results = self.run_infer(Storage(config))
         return json_results
 
     def conduct(self):
@@ -407,6 +440,9 @@ class ExperimentsOfGECBeta:
         elif self.args.task_mode == 'train':
             config = Config(model=self.args.model, dataset=self.args.dataset, preconfig=preset_config).get_config()
             self.run(config=config)
+        elif self.args.task_mode in [TaskMode.train_and_infer, TaskMode.train_and_eval_and_infer]:
+            config = Config(model=self.args.model, dataset=self.args.dataset, preconfig=preset_config).get_config()
+            self.run_combine(config=config)      
         else:
             raise NotImplementedError()
 
@@ -541,7 +577,7 @@ if __name__ == '__main__':
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
     setup_log(args)
-    if args.task_mode in ['train', 'tune', 'test', 'infer', 'eval', 'eval_train', 'infer_train']:
+    if args.task_mode in ['train', 'tune', 'test', 'infer', 'eval', 'eval_train', 'infer_train', TaskMode.train_and_infer, TaskMode.train_and_eval_and_infer]:
         experiment = EXPERIMENTS[args.model](args)
         experiment.conduct()
     elif args.task_mode in ['augmentation']:

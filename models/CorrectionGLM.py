@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import logging
+import wandb
 from peft import PeftModel, LoraConfig, TaskType, get_peft_model
 from transformers import AutoConfig, AutoTokenizer
 from transformers import StoppingCriteria, StoppingCriteriaList
@@ -107,6 +108,11 @@ def GLMForGrammaticalCorrection(args, settings):
     return model
 
 
+LOSS_CACHE = []
+DETECTION_LOSS_CACHE = []
+WEIGHTED_DETECTION_LOSS_CACHE = []
+GLM_LOSS_CACHE = []
+
 class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
     def __init__(self, args, settings):
         config: GLMConfig = AutoConfig.from_pretrained(
@@ -123,6 +129,29 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
         self.steps = 0
         self.print = (args.task_mode == 'train')
         self.print_interval = self.settings.gradient_accumulation_steps * self.settings.logging_steps
+        if self.print:
+            project_map = {
+                'mucgec': 'MuCGEC-CorrectionGLM',
+                'fcgec': 'FCGEC-CorrectionGLM',
+                'pretrain': 'Pretrain-CorrectionGLM',
+                'c4': 'Pretrain-CorrectionGLM',
+                'lang8': 'Lang8-CorrectionGLM',
+                'clang8': 'Lang8-CorrectionGLM',
+                'fce': 'English-CorrectionGLM',
+                'nucle': 'English-CorrectionGLM',
+                'hybrid_en': 'English-CorrectionGLM',
+                'wilocness': 'WILocness-CorrectionGLM'
+            }
+            wandb.init(
+                # set the wandb project where this run will be logged
+                project=project_map[args.dataset.lower() if args.dataset in project_map else 'CorrectionGLM'],
+                # track hyperparameters and run metadata
+                name=args.save_dir,
+                config={
+                    'mysettings': settings,
+                    'myargs': args,
+                }
+            )
         self.n_gpu = len(self.args.devices.split(','))
         self.loss_detach = settings.loss_detach
         # Load GLM Model
@@ -155,7 +184,9 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
                 target_ids=None,
                 detection_labels=None,
                 **kwargs):
-        self.steps += 1
+        global DETECTION_LOSS_CACHE, WEIGHTED_DETECTION_LOSS_CACHE, GLM_LOSS_CACHE, LOSS_CACHE
+        if self.training:
+            self.steps += 1
         # glm model prediction
         model_out = self.glm(input_ids, position_ids, attention_mask)
         outputs, lm_logits = model_out.last_hidden_states, model_out.logits
@@ -164,8 +195,11 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
         # generation model
         if self.settings.model_type == 'generate':
             loss = lm_loss
-            if self.print and self.steps % self.print_interval == 0:
-                logger.info("GLM Loss: %.4f" % (lm_loss))
+            if self.print and self.training:
+                GLM_LOSS_CACHE.append(lm_loss.item())
+                if self.steps % self.print_interval == 0:
+                    wandb.log({"glm_loss": sum(GLM_LOSS_CACHE)/len(GLM_LOSS_CACHE)})
+                    GLM_LOSS_CACHE = []
             return ModelOutput(
                 loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
                 logits={'glm': lm_logits},
@@ -179,23 +213,47 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
             output_for_detection = self.dropout(output_for_detection)
             logits = self.out_proj(output_for_detection)
             detection_loss = self.labeling_loss(logits.view(-1, self.settings.num_labels), detection_labels.view(-1))
+
             # detection model
-            if self.print and self.settings.model_type == 'detection':
-                if self.steps % self.print_interval == 0:
-                    logger.info("Detection Loss: %.4f" % (detection_loss))
+            if self.settings.model_type == 'detection':
+                # print loss
+                if self.print and self.training:
+                    DETECTION_LOSS_CACHE.append(detection_loss.item())
+                    if self.steps % self.print_interval == 0:
+                        wandb.log({"detection_loss": sum(DETECTION_LOSS_CACHE)/len(DETECTION_LOSS_CACHE)})
+                        DETECTION_LOSS_CACHE = []
+                # return loss and logits
                 loss = detection_loss
                 return ModelOutput(
                     loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
                     logits={'detection': logits},
                 )
+            
             # hybrid model
             else:
                 loss = lm_loss + self.settings.detection_loss_weight * detection_loss
-                if self.print and self.steps % self.print_interval == 0:
-                    logger.info("GLM Loss: %.4f, Detection Loss: %.4f, Detection Loss Weight: %.2f, Loss: %.4f" % (lm_loss, detection_loss, self.settings.detection_loss_weight, loss))
+                # print loss
+                if self.print and self.training:
+                    DETECTION_LOSS_CACHE.append(detection_loss.item())
+                    GLM_LOSS_CACHE.append(lm_loss.item())
+                    WEIGHTED_DETECTION_LOSS_CACHE.append(self.settings.detection_loss_weight * detection_loss.item())
+                    LOSS_CACHE.append(loss.item())
+                    if self.steps % self.print_interval == 0:
+                        wandb.log(
+                            {
+                                "detection_loss": sum(DETECTION_LOSS_CACHE)/len(DETECTION_LOSS_CACHE), 
+                                "glm_loss": sum(GLM_LOSS_CACHE)/len(GLM_LOSS_CACHE), 
+                                "weighted_detection_loss": sum(WEIGHTED_DETECTION_LOSS_CACHE)/len(WEIGHTED_DETECTION_LOSS_CACHE), 
+                                "total_loss": sum(LOSS_CACHE)/len(LOSS_CACHE)
+                            }
+                        )
+                        DETECTION_LOSS_CACHE, GLM_LOSS_CACHE, WEIGHTED_DETECTION_LOSS_CACHE, LOSS_CACHE = [], [], [], []
+                # return loss and logits
                 if detection_loss == torch.nan or lm_loss == torch.nan:
                     logger.info("Warning: Nan in loss.")
                 return ModelOutput(
                     loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
                     logits={'glm': lm_logits, 'detection': logits},
+                    # weighted_detection_loss = (self.settings.detection_loss_weight * detection_loss).unsqueeze(0) if self.n_gpu > 1 else loss,
+                    # glm_loss = lm_loss.unsqueeze(0) if self.n_gpu > 1 else loss,
                 )

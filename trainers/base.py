@@ -94,3 +94,6 @@ class TrainerBeta:
 
     def load(self, save_dir):
         raise NotImplementedError()
+    
+    def get_best_checkpoint_dir(self):
+        raise NotImplementedError()

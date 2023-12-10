@@ -84,23 +84,6 @@ class DataCollatorForGLMGEC:
         })
         return batch
 
-CN_MARKER_MAP = {
-    ',': '，',
-    ';': '；',
-    ':': '：',
-    '(': '（',
-    ')': '）',
-    '?': '？',
-    '!': '！',
-}
-
-
-def postprocess_cn(result: str):
-    for key in CN_MARKER_MAP:
-        result = result.replace(key, CN_MARKER_MAP[key])
-    return result
-
-
 def preprocess_logits_for_metrics(logits, labels):
     """
     Original Trainer may have a memory leak. 
@@ -531,10 +514,7 @@ class CorrectionGLMTrainer(TrainerBeta):
     def infer_on_dataset(self, split):
 
         # save settings
-        if split in ['train', 'valid']:
-            save_dir = os.path.join(self.args.save_dir, split)
-        else:
-            save_dir = self.args.save_dir
+        save_dir = os.path.join(self.args.save_dir, split)
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
@@ -700,8 +680,6 @@ class CorrectionGLMTrainer(TrainerBeta):
             
             # post process
             generation_res = self.tokenizer.decode(source_part, skip_special_tokens=True)
-            if self.settings.chinese_marker_substitution:
-                generation_res = postprocess_cn(generation_res)
             
             if 'label' in test_data:
                 res = {'id':test_data['id'], 'src': test_data['text'], 'tgt': test_data['label'], 'predict': generation_res}
@@ -766,9 +744,14 @@ class CorrectionGLMTrainer(TrainerBeta):
             edit_label_predictions.extend([detection_predictions[i][prefix_prompt_length[i]:prefix_length[i]] for i in range(batch_size)])
         self.test_dataset = self.test_dataset.add_column('detection_predictions', edit_label_predictions)
 
-
+        # In two situations, the mode will be set to detection only:
+        # 1. model is only detection model
         if self.settings.model_type == 'detection':
             logger.info("Warning: Because the detection model mode is chosen, The evaluation will be done under detection-only mode")
+            self.settings.detection_only = True
+        # 2. in eval_train mode, CorrectionGLM will only output detection in current settings. If needed, this limit can be canceled.
+        if self.args.task_mode == 'eval_train':
+            logger.info("Warning: In current settings, The evaluation of train and valid set will be done under detection-only mode")
             self.settings.detection_only = True
 
         if self.settings.detection_only:
@@ -882,8 +865,6 @@ class CorrectionGLMTrainer(TrainerBeta):
             
             # post process
             generation_res = self.tokenizer.decode(source_part, skip_special_tokens=True)
-            if self.settings.chinese_marker_substitution:
-                generation_res = postprocess_cn(generation_res)
             
             assert 'label' in test_data, "Validation set without targets(labels)"
             res = {
@@ -976,4 +957,8 @@ class CorrectionGLMTrainer(TrainerBeta):
             path = os.path.join(save_dir, 'pytorch_model.bin')
             information = self.model.load_state_dict(torch.load(path))
             logger.info(information)
-            
+    
+    def get_best_checkpoint_dir(self):
+        trainer_state = json.load(open(os.path.join(self.args.save_dir, 'trainer_state.json')))
+        best_model_checkpoint = trainer_state["best_model_checkpoint"]
+        return best_model_checkpoint

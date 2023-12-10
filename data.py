@@ -2,6 +2,7 @@ import os
 
 os.environ["HF_DATASETS_CACHE"] = "/data/liwei/cache/"
 
+from typing import List, Dict
 import json
 import logging
 import random
@@ -1490,20 +1491,31 @@ class GeneralDataset:
             test_set = self.wrapper.get_dataset('test')
             return {'train': train_set, 'valid': val_set, 'test': test_set}
         
-    def save_to_json(self):
-        train_data_file = os.path.join(self.config.data_dir, 'train.json')
-        valid_data_file = os.path.join(self.config.data_dir, 'valid.json')
-        test_data_file = os.path.join(self.config.data_dir, 'test.json')
-        assert not (os.path.exists(train_data_file) or os.path.exists(valid_data_file) or os.path.exists(test_data_file))
-        data_map = self.get_dataset_map()
-        train_set = [{"id": item["id"], "text": item["text"], "label": item["label"]} for item in data_map["train"]]
-        valid_set = [{"id": item["id"], "text": item["text"], "label": item["label"]} for item in data_map["valid"]]
-        test_set = [{"id": item["id"], "text": item["text"], "label": item["label"]} if "label" in data_map["test"].column_names 
-                    else {"id": item["id"], "text": item["text"]} for item in data_map["test"]]
-        json.dump(train_set, open(train_data_file, 'w'), ensure_ascii=False, indent=4)
-        json.dump(valid_set, open(valid_data_file, 'w'), ensure_ascii=False, indent=4)
-        json.dump(test_set, open(test_data_file, 'w'), ensure_ascii=False, indent=4)
-        logger.info(f"Dataset has been save to {train_data_file}, {valid_data_file}, {test_data_file}")
+    def save_to_json(self, split: List[str] = None, new_dir: str = None):
+        if new_dir == None:
+            new_dir = self.config.data_dir
+        train_data_file = os.path.join(new_dir, 'train.json')
+        valid_data_file = os.path.join(new_dir, 'valid.json')
+        test_data_file = os.path.join(new_dir, 'test.json')
+        if split == None or 'train' in split:
+            assert not os.path.exists(train_data_file)
+            data_map = self.get_dataset_map('train')
+            train_set = [{"id": item["id"], "text": item["text"], "label": item["label"]} for item in data_map["train"]]
+            json.dump(train_set, open(train_data_file, 'w'), ensure_ascii=False, indent=4)
+            logger.info(f"Train Dataset has been save to {train_data_file}")
+        if split == None or 'valid' in split:
+            assert not os.path.exists(valid_data_file)
+            data_map = self.get_dataset_map('valid')
+            valid_set = [{"id": item["id"], "text": item["text"], "label": item["label"]} for item in data_map["valid"]]
+            json.dump(valid_set, open(valid_data_file, 'w'), ensure_ascii=False, indent=4)
+            logger.info(f"Valid Dataset has been save to {valid_data_file}")
+        if split == None or 'test' in split:
+            assert not os.path.exists(test_data_file)
+            data_map = self.get_dataset_map('test')
+            test_set = [{"id": item["id"], "text": item["text"], "label": item["label"]} if "label" in data_map["test"].column_names 
+                        else {"id": item["id"], "text": item["text"]} for item in data_map["test"]]
+            json.dump(test_set, open(test_data_file, 'w'), ensure_ascii=False, indent=4)
+            logger.info(f"Test Dataset has been save to {test_data_file}")
 
 
 def get_data(dataset_name: str, model_name: str=None):
@@ -1553,20 +1565,14 @@ if __name__ == "__main__":
     import transformers
     transformers.utils.move_cache('/data/liwei/cache/huggingface/')
 
+    # save wilocness data as json, manually copy validation set to other datasets without dev set
     # class A:
     #     dataset = 'wilocness'
     #     model = 'seq2seqbeta'
     # args = A()
     # config = Config(args.model, args.dataset, False).get_config()
     # data = get_data(args.dataset, args.model)(args, config)
+    # dataset_map = data.get_dataset_map()
     # data.save_to_json()
 
-    class B:
-        dataset = 'c4'
-        model = 'seq2seqbeta'
-    args = B()
-    config = Config(args.model, args.dataset, False).get_config()
-    data = get_data(args.dataset, args.model)(args, config)
-    dataset_map = data.get_dataset_map()
-    print(dataset_map)
-    
+

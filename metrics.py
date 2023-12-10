@@ -554,6 +554,8 @@ class GECMetric:
         pprint(GECMetric.final_f1_score(src_texts, pred_texts, trg_texts, None))
 
 
+import wandb
+
 class DetectionCorrectionMetrics:
     def __init__(self, model_type, labels_num=3, loss_ignore_id=-100) -> None:
         assert labels_num in [2,3]
@@ -598,12 +600,12 @@ class DetectionCorrectionMetrics:
     def metrics(self, glm_pred_ids, glm_labels, detection_pred_ids, detection_labels):
         if self.model_type == 'generate':
             glm_accuracy = self.glm_accuracy(glm_pred_ids=glm_pred_ids, glm_labels=glm_labels)
-            return {'general_accuracy': glm_accuracy, 'glm_accuracy': glm_accuracy}
+            final_metrics = {'general_accuracy': glm_accuracy, 'glm_accuracy': glm_accuracy}
         else:
             detection_metrics = self.detection_metrics(detection_pred_ids=detection_pred_ids, detection_labels=detection_labels)
             if self.model_type == 'detection':
                 detection_metrics['general_accuracy'] = detection_metrics['detection_geometric_accuracy']
-                return detection_metrics
+                final_metrics = detection_metrics
             else:
                 glm_accuracy = self.glm_accuracy(glm_pred_ids=glm_pred_ids, glm_labels=glm_labels)
                 ## avg of glm acc and balanced detecion acc
@@ -615,7 +617,9 @@ class DetectionCorrectionMetrics:
                     metrics[key] = detection_metrics[key]
                 ## metirc for aggressive detection
                 metrics['ad_accuracy'] = metrics['error_acc_sum'] + glm_accuracy
-                return metrics
+                final_metrics = metrics
+        # wandb.log(final_metrics)
+        return final_metrics
 
     def metrics_func(self):
         def compute(eval_predictions):

@@ -8,6 +8,7 @@ matplotlib
 pandas
 datasets>=2.14.0
 transformers
+wandb
 spacy
 # in some case, the language model in spacy must be downloaded
 bs4
