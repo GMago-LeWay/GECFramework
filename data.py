@@ -1252,8 +1252,8 @@ class FangZhengTest(TextLabelDataset):
         return data
 
     def process_raw_file_xlsx(self):
-        self.raw_file = os.path.join(config.data_dir, 'dapei_1129.xlsx')
-        save = os.path.join(config.data_dir, 'test_1129.json')
+        self.raw_file = os.path.join(self.config.data_dir, 'dapei_1129.xlsx')
+        save = os.path.join(self.config.data_dir, 'test_1129.json')
         table = pd.read_excel(self.raw_file)
         data = []
         for i, item in table.iterrows():
