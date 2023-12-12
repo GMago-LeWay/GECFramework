@@ -2,6 +2,7 @@ import random
 import logging
 import os
 from utils.JointSTG import TAGGER_MAP
+from postprocess import PostProcessManipulator as PPM
 
 class Storage(dict):
     """
@@ -50,6 +51,7 @@ DATA_DIR_NAME = {
     'nucle': "NUCLE",
     'lang8': "Lang8",
     'clang8': "clang8",
+    'hybrid': "EnglishHybrid",
 }
 
 MODEL_CORR_DATA = {
@@ -780,7 +782,7 @@ class Config:
 
             # pretrained model
             'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-large-chinese'),
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-roberta-large'),
 
             # model config
             'torch_dtype': None,
@@ -818,10 +820,10 @@ class Config:
 
             # train settings
             # parameters that are able to be tuned
-            'detection_loss_weight': 7,
-            'alpha': [1, 3, 3],  # [1,2,2], or [1,2]
-            'epoch': 10,
-            'warmup_steps': 1000,
+            'detection_loss_weight': 10,
+            'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
+            'epoch': 20,
+            'warmup_steps': 200,
             'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
             'lr': 1e-5,
             'lr_scheduler': 'polynomial',
@@ -829,16 +831,16 @@ class Config:
 
             # evaluation config
             'logging_steps': 10,
-            'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 2000,  
+            'eval_step': 200,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 200,  
             'save_strategy': 'epoch',
             'early_stop': 10,
-            'eval_key': 'eval_ad_accuracy',
+            'eval_key': 'eval_general_accuracy',
 
             # inference config
             'detection_only': False,
             'test_split': False,
-            'post_process': ['cn_marker'],       # Please refer postprocess to get functions: 'cn_marker'
+            'post_process': [PPM.en_test],       # Please refer postprocess to get functions: 'cn_marker'
             # 'chinese_marker_substitution': True,
             'load_config_keys': ['model_type', 'prompt', 'num_labels'],
             'keep_threshold': None,

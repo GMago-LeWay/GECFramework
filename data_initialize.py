@@ -325,6 +325,8 @@ def get_english_test_data(
                 src_sent, src_text = None, None
                 idx_ex += 1
 
+    conll14_num = len(test_data_list)
+
     # BEA-19 test data(W&I Locness test data) item id {i}_BEA19
     BEA19_texts = open(bea19_input_file, 'r', encoding="utf-8").readlines()
     for i, line in enumerate(BEA19_texts):
@@ -336,9 +338,13 @@ def get_english_test_data(
             }
         )
 
+    bea19_num = len(test_data_list) - conll14_num
+
     for dir in save_dir_list:
         test_file = os.path.join(dir, 'test.json')
         json.dump(test_data_list, open(test_file, 'w'), ensure_ascii=False, indent=4)
+
+    print(f"CoNLL14 num: {conll14_num}, BEA19 num: {bea19_num}")
 
 
 if __name__ == "__main__":
@@ -382,6 +388,6 @@ if __name__ == "__main__":
         load_model='correctionglm',
         valid_json_to_copy='../datasets/WILocness/valid.json',
         test_json_to_copy='../datasets/WILocness/test.json',
-        shuffle_seed=None,
+        shuffle_seed=20,
         save_dir='../datasets/EnglishHybrid'
     )

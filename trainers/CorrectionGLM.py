@@ -392,7 +392,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             remove_columns=[],
             load_from_cache_file=self.settings.load_cache,
             cache_file_name=self._get_data_cache_name(f"{data_split}_for_detection"),
-            desc="Running detection preprocessing on test dataset"
+            desc=f"Running detection preprocessing on {data_split} dataset"
         )
 
     def generation_test_dataset_transform(self, data_split='test'):
@@ -407,7 +407,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             remove_columns=[],
             load_from_cache_file=self.settings.load_cache,
             cache_file_name=self._get_data_cache_name(f"{data_split}_for_generation"),
-            desc="Running generation preprocessing on test dataset"
+            desc=f"Running generation preprocessing on {data_split} dataset"
         )
 
     def do_train(self):

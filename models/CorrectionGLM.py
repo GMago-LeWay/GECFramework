@@ -139,7 +139,7 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
                 'clang8': 'Lang8-CorrectionGLM',
                 'fce': 'English-CorrectionGLM',
                 'nucle': 'English-CorrectionGLM',
-                'hybrid_en': 'English-CorrectionGLM',
+                'hybrid': 'English-CorrectionGLM',
                 'wilocness': 'WILocness-CorrectionGLM'
             }
             wandb.init(

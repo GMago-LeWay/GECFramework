@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument('--task_mode', type=str, default='train',
                         help=f'{TaskMode.train}/{TaskMode.eval}/{TaskMode.infer}/{TaskMode.eval_train}/{TaskMode.infer_train}/{TaskMode.train_and_infer}/{TaskMode.train_and_eval_and_infer}/{TaskMode.augmentation}')  
     parser.add_argument('--dataset', type=str, default='mucgec',
-                        help='hybridset/nlpcc2018task2/fangzhengspell/fangzhenggrammar/guangming/peopledaily/augment/fangzhengaugment/fangzhengdapei/fcgec/mucgec/pretrain')  
+                        help='hybridset/nlpcc2018task2/fangzhengspell/fangzhenggrammar/guangming/peopledaily/augment/fangzhengaugment/fangzhengdapei/fcgec/mucgec/pretrain/c4/lang8/clang8/fce/nucle/wilocness/hybrid')  
     parser.add_argument('--save_root_dir', type=str, default='results_glm',
                         help='root path to save results.')
     parser.add_argument('--devices', type=str, default='0',
@@ -569,6 +569,8 @@ EXPERIMENTS = {
 }
 
 if __name__ == '__main__':
+    args.model = args.model.lower()
+    args.dataset = args.dataset.lower()
     args.device = 'cuda:'+ str(args.device) if args.device >= 0 else 'cpu'
     # set save directory
     time_str = time.strftime('%Y%m%d-%H%M',time.localtime())

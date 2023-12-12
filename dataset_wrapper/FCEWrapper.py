@@ -18,7 +18,7 @@ class FCEWrapper:
     def get_dataset(self, split=None)-> dict:
         assert split in ['train', 'valid', 'test']
         # print("------------", self.config.data_dir)
-        if split in ['valid', 'test']:
+        if split == 'valid':
             split = 'validation'
         data = datasets.load_dataset(
             'dataset_wrapper/FCEBuilder.py', 
