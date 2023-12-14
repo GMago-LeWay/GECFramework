@@ -821,7 +821,7 @@ class Config:
 
             # train settings
             # parameters that are able to be tuned
-            'detection_loss_weight': 10,
+            'detection_loss_weight': 5,
             'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
             'epoch': 10,
             'warmup_steps': 2000,
@@ -832,7 +832,7 @@ class Config:
 
             # evaluation config
             'logging_steps': 10,
-            'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
+            'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch 
             'save_step': 2000,  
             'save_strategy': 'epoch',
             'early_stop': 20,
