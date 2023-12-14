@@ -162,7 +162,7 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
             torch_dtype=settings.torch_dtype,
         )
         # GLM Loss
-        self.glm_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction='mean')
+        self.glm_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction=self.settings.loss_reduce)
 
         if self.settings.model_type in ['all', 'detection']:
         # Sequence labeling head.
@@ -173,7 +173,7 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
             # Labeling Loss
             # self.labeling_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction='mean')
             self.labeling_loss = MultiFocalLoss(num_class=settings.num_labels, alpha=settings.alpha, gamma=2, 
-                                                reduction='mean', dtype=settings.torch_dtype, ignore_id=settings.loss_ignore_id)
+                                                reduction=self.settings.loss_reduce, dtype=settings.torch_dtype, ignore_id=settings.loss_ignore_id)
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -249,8 +249,8 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
                         )
                         DETECTION_LOSS_CACHE, GLM_LOSS_CACHE, WEIGHTED_DETECTION_LOSS_CACHE, LOSS_CACHE = [], [], [], []
                 # return loss and logits
-                if detection_loss == torch.nan or lm_loss == torch.nan:
-                    logger.info("Warning: Nan in loss.")
+                if self.print and (torch.any(torch.isnan(detection_loss)) or torch.any(torch.isnan(lm_loss))):
+                    logger.info("Warning: Nan Value in loss.")
                 return ModelOutput(
                     loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
                     logits={'glm': lm_logits, 'detection': logits},

@@ -158,9 +158,12 @@ class CorrectionGLMTrainer(TrainerBeta):
         num_labels = str(self.settings.num_labels)
         prompt = str(self.settings.prompt)
         max_train_source_length = str(self.settings.max_train_source_length)
+        max_eval_source_length = str(self.settings.max_eval_source_length)
+        max_infer_source_length = str(self.settings.max_infer_source_length)
+        infer_split_sentence = str(self.settings.split_infer_sentence)
         detection_results = str(self.settings.detection_results['train']) + '_' + str(self.settings.detection_results['valid']) + '_' + str(self.settings.detection_results['test']) 
         data_dir = self.settings.data_dir
-        settings_list = [pretrained_model, model_type, num_labels, prompt, max_train_source_length, detection_results, data_dir]
+        settings_list = [pretrained_model, model_type, num_labels, prompt, max_train_source_length, max_eval_source_length, max_infer_source_length, infer_split_sentence, detection_results, data_dir]
         settings_str = '_'.join(settings_list)
         hash_value = hashlib.md5(settings_str.encode('utf-8')).hexdigest()
         hash_str = str(hash_value)
@@ -218,12 +221,12 @@ class CorrectionGLMTrainer(TrainerBeta):
             return processed
         return _preprocess
     
-    def _get_detection_preprocess_function(self):
+    def _get_detection_preprocess_function(self, max_sentence_length):
         def _preprocess(examples):
             processed = {}
             for i in range(len(examples['text'])):
                 src = examples['text'][i]
-                result = self.data_processor.convert_sentence_to_detection_example(src, None, enable_warning=(self.args.task_mode == 'infer'))
+                result = self.data_processor.convert_sentence_to_detection_example(src, max_sentence_length, enable_warning=(self.args.task_mode == 'infer'))
                 if not processed:
                     for key in result:
                         processed[key] = []
@@ -387,7 +390,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         """
 
         self.test_dataset = self.dataset[data_split].map(
-            self._get_detection_preprocess_function(),
+            self._get_detection_preprocess_function(max_sentence_length=self.settings.max_infer_source_length),
             batched=True,
             remove_columns=[],
             load_from_cache_file=self.settings.load_cache,
@@ -553,6 +556,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                 for key in reserved_columns:
                     if key in item:
                         result[key] = item[key]
+                result["complete_src_tokens"] = self.tokenizer.encode(result["text"])
                 test_dataset_for_generation.append(result)
         
         # detection process (if no detection results are arranged)
@@ -562,6 +566,8 @@ class CorrectionGLMTrainer(TrainerBeta):
             edit_label_predictions = []
             logger.info("Error Detection:")
             keep_label_id = self.data_processor.edit_label_map['$KEEP']
+            error_label_id = self.data_processor.edit_label_map['$ERROR']
+            insert_label_id = self.data_processor.edit_label_map['$INSERT']
             for test_data in tqdm(test_data_loader):
                 test_data.to(self.args.device)
                 detection_logits = self.model(**test_data).logits['detection']
@@ -569,6 +575,12 @@ class CorrectionGLMTrainer(TrainerBeta):
                 if self.settings.keep_threshold:
                     keep_mask = (detection_probs[:, :, keep_label_id] > self.settings.keep_threshold)*1.
                     detection_probs[:, :, keep_label_id] = keep_mask
+                if self.settings.error_threshold:
+                    non_error_mask = (detection_probs[:, :, error_label_id] < self.settings.error_threshold)*1.
+                    detection_probs[:, :, error_label_id] -= non_error_mask
+                if self.settings.num_labels >= 3 and self.settings.insert_threshold:
+                    non_insert_mask = (detection_probs[:, :, insert_label_id] < self.settings.insert_threshold)*1.
+                    detection_probs[:, :, insert_label_id] -= non_insert_mask
                 detection_predictions = detection_probs.argmax(-1).tolist()
                 prefix_length = test_data['prefix_length'].tolist()
                 prefix_prompt_length = test_data['prefix_prompt_length'].tolist()
@@ -602,6 +614,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                 for key in reserved_columns:
                     if key in item:
                         result[key] = item[key]
+                result["complete_src_tokens"] = self.tokenizer.encode(result["text"])
                 test_dataset_for_generation.append(result)
 
         ## After detection, Preparing data for generation
@@ -622,6 +635,12 @@ class CorrectionGLMTrainer(TrainerBeta):
         ## model do the generation at every [MASK]
         logging.info("GLM model do the generation:")
         for test_data in tqdm(test_dataset_for_generation):
+            # check if the text is truncated.
+            complete_source_tokens = test_data["complete_src_tokens"]
+            length_input = test_data['prefix_length'] - test_data['prefix_prompt_length']
+            assert length_input <= len(complete_source_tokens), "Error: input ids can only be truncated, but found source tokens shorter than input tokens"
+            length_exceed_flag = (length_input < len(complete_source_tokens))
+            # record mask positions for generation
             mask_positions = []
             for idx, id in enumerate(test_data['input_ids']):
                 if id == self.tokenizer.mask_token_id:
@@ -678,6 +697,15 @@ class CorrectionGLMTrainer(TrainerBeta):
                 source_part = source_part[:first_mask_pos] + generation_part[first_sop_pos+1: first_eop_pos] + source_part[first_mask_pos+1:]
                 generation_part = generation_part[first_eop_pos+1:]
             
+            # truncate text, concate the original rear text
+            if length_exceed_flag:
+                source_part = source_part[:-1] + complete_source_tokens[length_input-1:]
+                logger.info(
+                    f"Warning: Found truncation in current example. " \
+                    f"\nTruncated: {self.tokenizer.decode(test_data['input_ids'][test_data['prefix_prompt_length']:test_data['prefix_length']])}" \
+                    f"\nOriginal: {self.tokenizer.decode(complete_source_tokens)}" \
+                    f"\nFinal: {self.tokenizer.decode(source_part)}"
+                )
             # post process
             generation_res = self.tokenizer.decode(source_part, skip_special_tokens=True)
             
@@ -728,6 +756,8 @@ class CorrectionGLMTrainer(TrainerBeta):
         # detection
         logger.info("Error Detection:")
         keep_label_id = self.data_processor.edit_label_map['$KEEP']
+        error_label_id = self.data_processor.edit_label_map['$ERROR']
+        insert_label_id = self.data_processor.edit_label_map['$INSERT']
         for test_data in tqdm(test_data_loader):
             test_data.to(self.args.device)
             detection_logits = self.model(**test_data).logits['detection']
@@ -737,6 +767,12 @@ class CorrectionGLMTrainer(TrainerBeta):
             if self.settings.keep_threshold:
                 keep_mask = (detection_probs[:, :, keep_label_id] > self.settings.keep_threshold)*1.
                 detection_probs[:, :, keep_label_id] = keep_mask
+            if self.settings.error_threshold:
+                non_error_mask = (detection_probs[:, :, error_label_id] < self.settings.error_threshold)*1.
+                detection_probs[:, :, error_label_id] -= non_error_mask
+            if self.settings.num_labels >= 3 and self.settings.insert_threshold:
+                non_insert_mask = (detection_probs[:, :, insert_label_id] < self.settings.insert_threshold)*1.
+                detection_probs[:, :, insert_label_id] -= non_insert_mask
             detection_predictions = detection_probs.argmax(-1).tolist()
             prefix_length = test_data['prefix_length'].tolist()
             prefix_prompt_length = test_data['prefix_prompt_length'].tolist()
@@ -791,6 +827,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             for key in reserved_columns:
                 if key in item:
                     result[key] = item[key]
+            result["complete_src_tokens"] = self.tokenizer.encode(result["text"])
             result['golden_masked_src_token_ids'] = std_result["input_ids"][std_result["prefix_length"]:std_result["source_length"]]
             test_dataset_for_generation.append(result)
 
@@ -802,6 +839,12 @@ class CorrectionGLMTrainer(TrainerBeta):
 
         logging.info("GLM model do the generation:")
         for i, test_data in tqdm(enumerate(test_dataset_for_generation)):
+            # check if the text is truncated.
+            complete_source_tokens = test_data["complete_src_tokens"]
+            length_input = test_data['prefix_length'] - test_data['prefix_prompt_length']
+            assert length_input <= len(complete_source_tokens), "Error: input ids can only be truncated, but found source tokens shorter than input tokens"
+            length_exceed_flag = (length_input < len(complete_source_tokens))
+            # record mask positions for generation
             mask_positions = []
             original_item = self.test_dataset[i]
             # find correspond labeled data example, save relavant information
@@ -862,7 +905,16 @@ class CorrectionGLMTrainer(TrainerBeta):
                 first_eop_pos = generation_part.index(self.tokenizer.eop_token_id)
                 source_part = source_part[:first_mask_pos] + generation_part[first_sop_pos+1: first_eop_pos] + source_part[first_mask_pos+1:]
                 generation_part = generation_part[first_eop_pos+1:]
-            
+
+            # truncate text, concate the original rear text
+            if length_exceed_flag:
+                source_part = source_part[:-1] + complete_source_tokens[length_input-1:]
+                logger.info(
+                    f"Warning: Found truncation in current example. " \
+                    f"\nTruncated: {self.tokenizer.decode(test_data['input_ids'][test_data['prefix_prompt_length']:test_data['prefix_length']])}" \
+                    f"\nOriginal: {self.tokenizer.decode(complete_source_tokens)}" \
+                    f"\nFinal: {self.tokenizer.decode(source_part)}"
+                )
             # post process
             generation_res = self.tokenizer.decode(source_part, skip_special_tokens=True)
             

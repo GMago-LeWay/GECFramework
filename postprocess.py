@@ -5,11 +5,11 @@ from tqdm import tqdm
 import zipfile
 import codecs
 from nltk import word_tokenize
-import spacy
 import re
 import codecs
 
-# EN_MODEL = spacy.load("en_core_web_sm")
+import spacy
+en = spacy.load("en_core_web_sm")
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ class PostProcessManipulator:
     cn_marker = 'cn_marker'
     merge_sample = 'merge_sample'
     en_test = 'en_test'
+    en_test_py3 = 'en_test_py3'
 
 
 class PostProcess:
@@ -62,14 +63,16 @@ class PostProcess:
         self.post_process_func = {
             PostProcessManipulator.cn_marker: self._chinese_marker_substitute,
             PostProcessManipulator.merge_sample: self._merge_split_test_sample,
-            PostProcessManipulator.en_test: self._en_conll_bea_postprocess,
+            PostProcessManipulator.en_test: self._en_conll_bea_postprocess_py2,
+            PostProcessManipulator.en_test_py3: self._en_conll_bea_postprocess_py3,
             # 'spacy_retokenize': self._retokenize,
         }
 
         self.allowed_dataset = {
             PostProcessManipulator.cn_marker: ['mucgec', 'fcgec', 'pretrain', 'fangzhenggrammar', 'fangzhengspell'],
-            PostProcessManipulator.merge_sample: [],
-            PostProcessManipulator.en_test: ['c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid']
+            PostProcessManipulator.merge_sample: ['mucgec', 'fcgec', 'pretrain', 'fangzhenggrammar', 'fangzhengspell', 'c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid'],
+            PostProcessManipulator.en_test: ['c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid'],
+            PostProcessManipulator.en_test_py3: ['c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid']
         }
 
     def _chinese_marker_substitute(self):
@@ -83,58 +86,81 @@ class PostProcess:
     
     @staticmethod
     def conll_postprocess(item):
-        # nltk tokenize for conll output
-        global RETOKENIZATION_RULES
+        global RETOKENIZATION_RULES, en
 
         item["oripred"] = str(item["predict"])
-        tokenized_output = word_tokenize(item["predict"])
-        output = ' '.join(tokenized_output)
+        line = str(item["predict"])
+        line = re.sub(" '\s?((?:m )|(?:ve )|(?:ll )|(?:s )|(?:d ))",
+                        "'\\1", line)
+        line = " ".join([t.text for t in en.tokenizer(line)])
         # fix tokenization issues for CoNLL
         for rule in RETOKENIZATION_RULES:
-            output = re.sub(rule[0], rule[1], output)
-        item["predict"] = output
+            line = re.sub(rule[0], rule[1], line)
+        item["predict"] = line
         return item
     
     @staticmethod
-    def bea19_postprocess(item):
-        # item["oripred"] = str(item["predict"])
-        # en_doc = EN_MODEL(item["predict"])
-        # item["predict"] = ' '.join([token.text for token in en_doc])
+    def bea_postprocess(item):
+        global en
+        item["oripred"] = str(item["predict"])
+        line = str(item["predict"])
+        line = re.sub(" '\s?((?:m )|(?:ve )|(?:ll )|(?:s )|(?:d ))",
+                        "'\\1", line)
+        line = " ".join([t.text for t in en.tokenizer(line)])
+        # in spaCy v1.9.0 and the en_core_web_sm-1.2.0 model
+        # 80% -> 80%, but in newest ver. 2.3.9', 80% -> 80 %
+        # haven't -> haven't, but in newest ver. 2.3.9', haven't -> have n't
+        line = re.sub("(?<=\d)\s+%", "%", line)
+        line = re.sub("((?:have)|(?:has)) n't", "\\1n't", line)
+        line = re.sub("^-", "- ", line)
+        line = re.sub(r"\s+", " ", line)
+        item["predict"] = line
         return item
-    
+
+    def conll14_postprocess_by_groups(self, results, original_file, output_file):
+        with codecs.open(original_file, 'w', 'utf-8') as f:
+            for item in results:
+                f.write(item["predict"] + '\n')
+        os.system(f"{PYTHON2_PATH} utils/spacy_split.py -d conll -i {original_file} -o {output_file}")
+
     def bea19_postprocess_by_groups(self, results, original_file, output_file):
         with codecs.open(original_file, 'w', 'utf-8') as f:
             for item in results:
                 f.write(item["predict"] + '\n')
-        os.system(f"{PYTHON2_PATH} utils/spacy_split.py -i {original_file} -o {output_file}")
+        os.system(f"{PYTHON2_PATH} utils/spacy_split.py -d bea -i {original_file} -o {output_file}")
     
-    def _en_conll_bea_postprocess(self):
+    def _en_conll_bea_postprocess_py2(self):
         last_number = -1
-        bea19_index = None
+        bea19_start_index = None
         test_data = {'conll14': [], 'bea19': []}
         current_dataset = 'conll14'
-        logger.info("CoNLL14 test data...")
+        logger.info("Load CoNLL14 test data...")
         for i in range(len(self.results)):
             assert 'conll14' in self.results[i]["id"] or 'bea19' in self.results[i]["id"], "Current test set is not the concatenation of CoNLL14 and BEA19."
             # check current result item belongs to which test set
             number, data_source = self.results[i]["id"].split('_')
             if data_source != current_dataset:
                 last_number = -1
-                bea19_index = i
+                bea19_start_index = i
                 current_dataset = 'bea19'
-                logger.info("BEA19 test data...")
+                logger.info("Load BEA19 test data...")
             assert eval(number) == last_number + 1
             last_number = eval(number)
             assert data_source in test_data
-
-            # postprocess
-            if data_source == 'conll14':
-                self.results[i] = PostProcess.conll_postprocess(self.results[i])
-            else:
-                # self.results[i] = PostProcess.bea19_postprocess(self.results[i])
-                pass
-            
             test_data[data_source].append(self.results[i])
+
+        CONLL14_NUM, BEA19_NUM = 1312, 4477
+        # conll14 processed by groups (generate file and retokenize by spacy 1.9.0 with en_core_web_sm 1.2.0)
+        conll14_ori_file_path = os.path.join(self.save_dir, 'conll14_original.txt')
+        conll14_file_name = 'conll14.txt'
+        conll14_file_path = os.path.join(self.save_dir, conll14_file_name)
+        self.conll14_postprocess_by_groups(test_data['conll14'], original_file=conll14_ori_file_path, output_file=conll14_file_path)
+        # load retokenized results
+        conll14_results = open(conll14_file_path).readlines()
+        assert len(test_data['conll14']) == len(conll14_results) == bea19_start_index == CONLL14_NUM
+        for i in range(CONLL14_NUM):
+            self.results[i]["oripred"] = str(self.results[i]["predict"]) 
+            self.results[i]["predict"] = conll14_results[i].strip() 
         
         # bea19 processed by groups (generate file and retokenize by spacy 1.9.0 with en_core_web_sm 1.2.0)
         bea19_ori_file_path = os.path.join(self.save_dir, 'bea19_original.txt')
@@ -143,18 +169,61 @@ class PostProcess:
         self.bea19_postprocess_by_groups(test_data['bea19'], original_file=bea19_ori_file_path, output_file=bea19_file_path)
         # load retokenized results
         bea19_results = open(bea19_file_path).readlines()
-        assert len(self.results) == len(test_data['conll14']) + len(bea19_results) == 1312 + 4477
-        assert len(bea19_results) == len(self.results) - bea19_index == 4477
-        for i in range(bea19_index, len(self.results)):
+        assert len(self.results) == len(test_data['conll14']) + len(bea19_results) == CONLL14_NUM + BEA19_NUM
+        assert len(bea19_results) == len(self.results) - bea19_start_index == BEA19_NUM
+        for i in range(bea19_start_index, len(self.results)):
             self.results[i]["oripred"] = str(self.results[i]["predict"]) 
-            self.results[i]["predict"] = bea19_results[i-bea19_index].strip()           
+            self.results[i]["predict"] = bea19_results[i-bea19_start_index].strip()           
 
         # save file for further evaluation
         # conll14 evaluation
         global CONLL14_M2_FILE
-        conll14_file_name = 'predict.conll14'
+        evaluation_result_file = os.path.join(self.save_dir, 'conll14_metrics.txt')
+        os.system(f"{PYTHON2_PATH} utils/m2scorer/scripts/m2scorer.py {conll14_file_path} {CONLL14_M2_FILE} >> {evaluation_result_file}")
+        # print metrics of conll14
+        metrics_lines = open(evaluation_result_file).readlines()
+        precision_name, _, precision = metrics_lines[0].strip().split()
+        recall_name, _, recall = metrics_lines[1].strip().split()
+        f_05_name, _, f_05 = metrics_lines[2].strip().split()
+        logger.info(f"{precision_name}\t{recall_name}\t{f_05_name}")
+        logger.info(f"{precision}\t{recall}\t{f_05}")
+        
+        # pack bea19 output  
+        with zipfile.ZipFile(os.path.join(self.save_dir, 'bea19.zip'), mode='w') as zipf:
+            zipf.write(bea19_file_path, bea19_file_name)
+
+    def _en_conll_bea_postprocess_py3(self):
+        last_number = -1
+        bea19_start_index = None
+        test_data = {'conll14': [], 'bea19': []}
+        current_dataset = 'conll14'
+        logger.info("Load CoNLL14 test data...")
+        for i in range(len(self.results)):
+            assert 'conll14' in self.results[i]["id"] or 'bea19' in self.results[i]["id"], "Current test set is not the concatenation of CoNLL14 and BEA19."
+            # check current result item belongs to which test set
+            number, data_source = self.results[i]["id"].split('_')
+            if data_source != current_dataset:
+                last_number = -1
+                bea19_start_index = i
+                current_dataset = 'bea19'
+                logger.info("Load BEA19 test data...")
+            assert eval(number) == last_number + 1
+            last_number = eval(number)
+            assert data_source in test_data
+            if current_dataset == 'conll14':
+                self.results[i] = PostProcess.conll_postprocess(self.results[i])
+            else:
+                self.results[i] = PostProcess.bea_postprocess(self.results[i])
+            test_data[data_source].append(self.results[i])
+
+        CONLL14_NUM, BEA19_NUM = 1312, 4477    
+
+        # save file for further evaluation
+        # conll14 evaluation
+        global CONLL14_M2_FILE
+        conll14_file_name = 'conll14.txt'
         conll14_file_path = os.path.join(self.save_dir, conll14_file_name)
-        evaluation_result_file = os.path.join(self.save_dir, 'CoNLL14_metrics.txt')
+        evaluation_result_file = os.path.join(self.save_dir, 'conll14_metrics.txt')
         with open(conll14_file_path, 'w') as f:
             for item in test_data["conll14"]:
                 f.write(item["predict"] + '\n')
@@ -167,7 +236,12 @@ class PostProcess:
         logger.info(f"{precision_name}\t{recall_name}\t{f_05_name}")
         logger.info(f"{precision}\t{recall}\t{f_05}")
         
-        # pack bea19 output  
+        # pack bea19 output 
+        bea19_file_name = 'bea19.txt'
+        bea19_file_path = os.path.join(self.save_dir, bea19_file_name)
+        with open(bea19_file_path, 'w') as f:
+            for item in test_data["bea19"]:
+                f.write(item["predict"] + '\n')
         with zipfile.ZipFile(os.path.join(self.save_dir, 'bea19.zip'), mode='w') as zipf:
             zipf.write(bea19_file_path, bea19_file_name)
 
@@ -216,6 +290,9 @@ class PostProcess:
 
     def post_process_and_save(self):
         if 'post_process' in self.config:
+            if 'split_sentence' in self.config and PostProcessManipulator.merge_sample not in self.config.post_process:
+                logger.info(f"Auto Set: You enable split_sentence for the test set but you did not include {PostProcessManipulator.merge_sample} as a postprocess. Auto added it in the front.")
+                self.config.post_process.insert(0, PostProcessManipulator.merge_sample)
             for name in self.config.post_process:
                 # check if it is an allowed processing
                 allowed = False

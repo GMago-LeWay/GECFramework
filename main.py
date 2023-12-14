@@ -25,6 +25,7 @@ class TaskMode:
     infer_train = 'infer_train'
     train_and_infer = 'train_infer'
     train_and_eval_and_infer = 'train_eval_infer'
+    custom = 'custom'
 
 
 def parse_args():
@@ -430,6 +431,50 @@ class ExperimentsOfGECBeta:
         self.args.task_mode = TaskMode.infer
         json_results = self.run_infer(Storage(config))
         return json_results
+    
+    def run_custom(self, config):
+        assert self.args.model == 'correctionglm'
+        # threshold experiment
+        self.args.task_mode = TaskMode.infer
+        original_save_dir = str(self.args.save_dir)
+
+        # keep threshold
+        for th in np.arange(0.2, 0.44, 0.02):
+            th = round(th, 2)
+            config.keep_threshold = th
+            logger.info(f"KEEP threshold {th} inference:")
+            self.args.save_dir = os.path.join(original_save_dir, f'keep_threshold_{th}')
+            if not os.path.exists(self.args.save_dir):
+                os.makedirs(self.args.save_dir)
+            self.run_infer(config)
+        
+        # edit threshold
+        config.keep_threshold = None
+        for th1 in np.arange(0.3, 1.1, 0.1):
+            for th2 in np.arange(0.3, 1.1, 0.1):
+                th1, th2 = round(th1, 2), round(th2, 2)
+                config.error_threshold = th1
+                config.insert_threshold = th2
+                logger.info(f"ERROR threshold {th1} INSERT threshold {th2} inference:")
+                self.args.save_dir = os.path.join(original_save_dir, f'error_{th1}_insert_{th2}')
+                if not os.path.exists(self.args.save_dir):
+                    os.makedirs(self.args.save_dir)
+                self.run_infer(config)
+
+        # keep-edit threshold
+        for th in np.arange(0.34, 0.40, 0.02):
+            th = round(th, 2)
+            config.keep_threshold = th
+            for th1 in np.arange(0.3, 1.1, 0.1):
+                for th2 in np.arange(0.3, 1.1, 0.1):
+                    th1, th2 = round(th1, 2), round(th2, 2)
+                    config.error_threshold = th1
+                    config.insert_threshold = th2
+                    logger.info(f"KEEP threshold {th} ERROR threshold {th1} INSERT threshold {th2} inference:")
+                    self.args.save_dir = os.path.join(original_save_dir, f'keep_{th}_error_{th1}_insert_{th2}')
+                    if not os.path.exists(self.args.save_dir):
+                        os.makedirs(self.args.save_dir)
+                    self.run_infer(config)
 
     def conduct(self):
         preset_config = {}
@@ -443,6 +488,9 @@ class ExperimentsOfGECBeta:
         elif self.args.task_mode in [TaskMode.train_and_infer, TaskMode.train_and_eval_and_infer]:
             config = Config(model=self.args.model, dataset=self.args.dataset, preconfig=preset_config).get_config()
             self.run_combine(config=config)      
+        elif self.args.task_mode == TaskMode.custom:
+            config = Config(model=self.args.model, dataset=self.args.dataset, preconfig=preset_config).get_config()
+            self.run_custom(config=config)
         else:
             raise NotImplementedError()
 
@@ -579,7 +627,7 @@ if __name__ == '__main__':
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
     setup_log(args)
-    if args.task_mode in ['train', 'tune', 'test', 'infer', 'eval', 'eval_train', 'infer_train', TaskMode.train_and_infer, TaskMode.train_and_eval_and_infer]:
+    if args.task_mode in ['train', 'tune', 'test', 'infer', 'eval', 'eval_train', 'infer_train', TaskMode.train_and_infer, TaskMode.train_and_eval_and_infer, TaskMode.custom]:
         experiment = EXPERIMENTS[args.model](args)
         experiment.conduct()
     elif args.task_mode in ['augmentation']:

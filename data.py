@@ -1517,6 +1517,11 @@ class GeneralDataset:
             json.dump(test_set, open(test_data_file, 'w'), ensure_ascii=False, indent=4)
             logger.info(f"Test Dataset has been save to {test_data_file}")
 
+    def split_sentence_for_dataset(self, loaded_dataset, dataset_flag):
+        logger.info(f"Splitting sentences in {dataset_flag}. The id, text will be retained., id will be add a prefix for split order.")
+        def split_func():
+            pass
+
 
 def get_data(dataset_name: str, model_name: str=None):
     DATA_MAP = {
