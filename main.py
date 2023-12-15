@@ -46,6 +46,8 @@ def parse_args():
                         help='model save directory to be loaded in infer task.')
     parser.add_argument('--resume', type=str, default=None,
                         help='model checkpoint to continue training.')
+    parser.add_argument('--lora', action="store_true", default=False,
+                        help='LoRA method, for now only support CorrectionGLM.')
     parser.add_argument('--seed', type=int, default=111,
                         help='random seed.')
     parser.add_argument('--data_save_dir', type=str, default=None,
@@ -489,9 +491,9 @@ class ExperimentsOfGECBeta:
                     result_f[th1].append(f_05)
                     result_p[th1].append(precision)
                     result_r[th1].append(recall)
-            pd.DataFrame(result_f).to_csv(f"keep_{th}_f_05.csv", index=False)
-            pd.DataFrame(result_r).to_csv(f"keep_{th}_r.csv", index=False)
-            pd.DataFrame(result_p).to_csv(f"keep_{th}_p.csv", index=False)
+            pd.DataFrame(result_f).to_csv(os.path.join(original_save_dir, f"keep_{th}_f_05.csv"), index=False)
+            pd.DataFrame(result_r).to_csv(os.path.join(original_save_dir, f"keep_{th}_r.csv"), index=False)
+            pd.DataFrame(result_p).to_csv(os.path.join(original_save_dir, f"keep_{th}_p.csv"), index=False)
 
     def conduct(self):
         preset_config = {}

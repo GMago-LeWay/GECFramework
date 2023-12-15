@@ -88,7 +88,7 @@ class MultiFocalLoss(torch.nn.Module):
 
 def GLMForGrammaticalCorrection(args, settings):
     model = GLMForGrammaticalCorrectionModel(args, settings)
-    if settings.use_lora:
+    if args.lora:
         if args.load is None:
             # for n, p in model.named_parameters():
             #     print(n)
@@ -249,7 +249,7 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
                         )
                         DETECTION_LOSS_CACHE, GLM_LOSS_CACHE, WEIGHTED_DETECTION_LOSS_CACHE, LOSS_CACHE = [], [], [], []
                 # return loss and logits
-                if self.print and (torch.any(torch.isnan(detection_loss)) or torch.any(torch.isnan(lm_loss))):
+                if self.training and (torch.any(torch.isnan(detection_loss)) or torch.any(torch.isnan(lm_loss))):
                     logger.info("Warning: Nan Value in loss.")
                 return ModelOutput(
                     loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
