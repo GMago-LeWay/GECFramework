@@ -63,7 +63,7 @@ class TokenizerBasedTextEditProcessor:
         self.marker1_ids = self.tokenizer.convert_tokens_to_ids(self.marker1)
         self.marker2_ids = self.tokenizer.convert_tokens_to_ids(self.marker2)
 
-    def split_sentence(self, sentence: str, max_sentence_length: int = None, enable_warning = False) -> List[int]:
+    def split_sentence(self, sentence: str, max_sentence_length: int, enable_warning = False) -> List[int]:
         '''
         Use tokenizer to split sentence into a list of tokens
         '''
@@ -82,8 +82,8 @@ class TokenizerBasedTextEditProcessor:
         '''
         Use tokenizer to split sentence into a list of tokens, limit the sentence in a fixed length.
         '''
-        src_tokens = self.split_sentence(src)
-        tgt_tokens = self.split_sentence(tgt)
+        src_tokens = self.split_sentence(src, None)
+        tgt_tokens = self.split_sentence(tgt, None)
         if self.without_insert:
             diffs = self.align_without_insert(src_tokens=src_tokens, tgt_tokens=tgt_tokens)
         else:
@@ -534,7 +534,7 @@ class GLMDataProcessor:
         assert type(train_example['source_length']) == type(train_example['prefix_length']) == type(train_example['prefix_prompt_length']) == int
         return train_example
     
-    def convert_sentence_to_detection_example(self, src: str, max_sentence_length: int = None, enable_warning = False):
+    def convert_sentence_to_detection_example(self, src: str, max_sentence_length: int, enable_warning = False):
         src_tokens = self.edit_extractor.split_sentence(src, max_sentence_length=max_sentence_length, enable_warning=enable_warning)
         temp_example = {
             'input_ids': np.array([], dtype=int), 
@@ -552,7 +552,7 @@ class GLMDataProcessor:
         infer_example = self.add_detection_prefix(example, src_tokens=src_tokens, edit_labels=edit_labels)
         return infer_example
 
-    def convert_masked_sentence_to_infer_example(self, src: str, masked_text: str, max_sentence_length: int = None):
+    def convert_masked_sentence_to_infer_example(self, src: str, masked_text: str, max_sentence_length: int):
         '''
         TODO: 根据检错模型输出的MASK文本转换出用于生成的样本
         '''

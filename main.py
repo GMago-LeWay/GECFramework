@@ -496,7 +496,7 @@ class ExperimentsOfGECBeta:
             pd.DataFrame(result_p).to_csv(os.path.join(original_save_dir, f"keep_{th}_p.csv"), index=False)
 
     def conduct(self):
-        preset_config = {}
+        preset_config = self.args
 
         if self.args.task_mode in ['infer', 'infer_train', 'eval', 'eval_train']:
             config = Config(model=self.args.model, dataset=self.args.dataset, preconfig=preset_config).get_config()

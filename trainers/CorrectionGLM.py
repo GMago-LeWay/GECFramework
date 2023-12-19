@@ -157,17 +157,13 @@ class CorrectionGLMTrainer(TrainerBeta):
         model_type = str(self.settings.model_type)
         num_labels = str(self.settings.num_labels)
         prompt = str(self.settings.prompt)
-        max_train_source_length = str(self.settings.max_train_source_length)
-        max_eval_source_length = str(self.settings.max_eval_source_length)
-        max_infer_source_length = str(self.settings.max_infer_source_length)
-        infer_split_sentence = str(self.settings.split_infer_sentence)
         detection_results = str(self.settings.detection_results['train']) + '_' + str(self.settings.detection_results['valid']) + '_' + str(self.settings.detection_results['test']) 
         data_dir = self.settings.data_dir
-        settings_list = [pretrained_model, model_type, num_labels, prompt, max_train_source_length, max_eval_source_length, max_infer_source_length, infer_split_sentence, detection_results, data_dir]
+        settings_list = [pretrained_model, model_type, num_labels, prompt, detection_results, data_dir]
         settings_str = '_'.join(settings_list)
         hash_value = hashlib.md5(settings_str.encode('utf-8')).hexdigest()
         hash_str = str(hash_value)
-        logger.info(f'Hash Code Key of Dataset: {hash_str}')
+        logger.info(f'Common Hash Code Key of Readed Dataset: {hash_str}')
         return hash_str
     
     def _get_data_cache_name(self, correctionglm_data_category: str):
@@ -235,13 +231,13 @@ class CorrectionGLMTrainer(TrainerBeta):
             return processed
         return _preprocess        
     
-    def _get_detached_generation_preprocess_function(self):
+    def _get_detached_generation_preprocess_function(self, max_sentence_length):
         def _preprocess(examples):
             processed = {}
             for i in range(len(examples['text'])):
                 src = examples['text'][i]
                 masked_src = examples['masked_text'][i]
-                result = self.data_processor.convert_masked_sentence_to_infer_example(src, masked_src)
+                result = self.data_processor.convert_masked_sentence_to_infer_example(src, masked_src, max_sentence_length)
                 if not processed:
                     for key in result:
                         processed[key] = []
@@ -295,7 +291,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                     batched=True,
                     remove_columns=removed_columns,
                     load_from_cache_file=self.settings.load_cache,
-                    cache_file_name=self._get_data_cache_name("train_using_pred"),
+                    cache_file_name=self._get_data_cache_name(f"train_using_pred_{self.settings.max_train_source_length}"),
                     num_proc=self.settings.num_proc_trainset,
                     desc="Running preprocessing on train dataset",
                 )
@@ -338,7 +334,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                         batched=True,
                         remove_columns=removed_columns,
                         load_from_cache_file=self.settings.load_cache,
-                        cache_file_name=self._get_data_cache_name("train"),
+                        cache_file_name=self._get_data_cache_name(f"train_{self.settings.max_train_source_length}"),
                         num_proc=self.settings.num_proc_trainset,
                         desc="Running preprocessing on train dataset",
                     )
@@ -364,7 +360,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                     batched=True,
                     remove_columns=removed_columns,
                     load_from_cache_file=self.settings.load_cache,
-                    cache_file_name=self._get_data_cache_name("valid_using_pred"),
+                    cache_file_name=self._get_data_cache_name(f"valid_using_pred_{self.settings.max_eval_source_length}"),
                     desc="Running preprocessing on valid dataset",
                 )
             else:
@@ -379,7 +375,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                     batched=True,
                     remove_columns=removed_columns,
                     load_from_cache_file=self.settings.load_cache,
-                    cache_file_name=self._get_data_cache_name("valid"),
+                    cache_file_name=self._get_data_cache_name(f"valid_{self.settings.max_eval_source_length}"),
                     desc="Running preprocessing on valid dataset"
                 )
 
@@ -394,7 +390,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             batched=True,
             remove_columns=[],
             load_from_cache_file=self.settings.load_cache,
-            cache_file_name=self._get_data_cache_name(f"{data_split}_for_detection"),
+            cache_file_name=self._get_data_cache_name(f"{data_split}_for_detection_{self.settings.max_infer_source_length}_split{self.settings.pre_split_length_for_infer}"),
             desc=f"Running detection preprocessing on {data_split} dataset"
         )
 
@@ -405,11 +401,11 @@ class CorrectionGLMTrainer(TrainerBeta):
         NOTE: can only be used when masked text input is provided.
         """
         self.test_dataset = self.dataset[data_split].map(
-            self._get_detached_generation_preprocess_function(),
+            self._get_detached_generation_preprocess_function(self.settings.max_infer_source_length),
             batched=True,
             remove_columns=[],
             load_from_cache_file=self.settings.load_cache,
-            cache_file_name=self._get_data_cache_name(f"{data_split}_for_generation"),
+            cache_file_name=self._get_data_cache_name(f"{data_split}_for_generation_{self.settings.max_infer_source_length}_split{self.settings.pre_split_length_for_infer}"),
             desc=f"Running generation preprocessing on {data_split} dataset"
         )
 

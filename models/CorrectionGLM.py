@@ -162,7 +162,7 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
             torch_dtype=settings.torch_dtype,
         )
         # GLM Loss
-        self.glm_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction=self.settings.loss_reduce)
+        self.glm_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction='sum')
 
         if self.settings.model_type in ['all', 'detection']:
         # Sequence labeling head.
@@ -191,6 +191,9 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
         model_out = self.glm(input_ids, position_ids, attention_mask)
         outputs, lm_logits = model_out.last_hidden_states, model_out.logits
         lm_loss = self.glm_loss(lm_logits.view(-1, lm_logits.shape[-1]), target_ids.view(-1))
+        # in older version CrossEntropy with reduce='mean' is applied , but when no error sentences occurred, loss will be nan (models before 23/12/15)
+        if self.settings.loss_reduce == 'mean':
+            lm_loss = lm_loss / (0.1 + (target_ids != self.settings.loss_ignore_id).sum())
 
         # generation model
         if self.settings.model_type == 'generate':

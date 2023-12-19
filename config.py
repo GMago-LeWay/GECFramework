@@ -44,7 +44,7 @@ DATA_DIR_NAME = {
     'augment': "augment3",
     'fangzhengaugment': "FangZhengAugment",
     'fangzhengdapei': "FangZhengDapei",
-    'pretrain': "PreTrainSetSmall",
+    'pretrain': "PreTrainSet",
     'c4': "C4-200M",
     'wilocness': "WILocness",
     'fce': "FCE",
@@ -815,16 +815,16 @@ class Config:
                 },
 
                 # data related train settings
-                'gradient_accumulation_steps': 10,
+                'gradient_accumulation_steps': 20,
                 'train_batch_size': 12,
                 'eval_batch_size': 8,
                 'detection_batch_size': 8,
 
                 # train settings
                 # parameters that are able to be tuned
-                'detection_loss_weight': 5,
+                'detection_loss_weight': 10,
                 'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
-                'epoch': 10,
+                'epoch': 20,
                 'warmup_steps': 1000,
                 'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
                 'lr': 1e-5,
@@ -833,14 +833,14 @@ class Config:
 
                 # evaluation config
                 'logging_steps': 10,
-                'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch 
+                'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
                 'save_step': 2000,  
                 'save_strategy': 'epoch',
                 'early_stop': 20,
-                'eval_key': 'eval_general_accuracy',
+                'eval_key': 'eval_ad_accuracy',
 
                 # inference config
-                'split_infer_sentence': False,
+                'pre_split_length_for_infer': False,
                 'max_infer_source_length': None,
                 'detection_only': False,
                 'test_split': False,
@@ -906,7 +906,7 @@ class Config:
                 'epoch': 20,
                 'warmup_steps': 100,
                 'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
-                'lr': 1e-5,
+                'lr': 5e-6,
                 'lr_scheduler': 'polynomial',
                 'weight_decay': 1e-4,
 
@@ -919,7 +919,7 @@ class Config:
                 'eval_key': 'eval_general_accuracy',
 
                 # inference config
-                'split_infer_sentence': False,
+                'pre_split_length_for_infer': False,
                 'max_infer_source_length': None,
                 'detection_only': False,
                 'test_split': False,
@@ -998,7 +998,7 @@ class Config:
                 'eval_key': 'eval_general_accuracy',
 
                 # inference config
-                'split_infer_sentence': False,
+                'pre_split_length_for_infer': False,
                 'max_infer_source_length': None,
                 'detection_only': False,
                 'test_split': False,
@@ -1052,7 +1052,7 @@ class Config:
                 },
 
                 # data related train settings
-                'gradient_accumulation_steps': 10,
+                'gradient_accumulation_steps': 8,
                 'train_batch_size': 12,
                 'eval_batch_size': 8,
                 'detection_batch_size': 8,
@@ -1064,20 +1064,20 @@ class Config:
                 'epoch': 10,
                 'warmup_steps': 1000,
                 'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
-                'lr': 4e-5,
+                'lr': 1e-5,
                 'lr_scheduler': 'polynomial',
                 'weight_decay': 1e-4,
 
                 # evaluation config
                 'logging_steps': 10,
-                'eval_step': 4000,        # steps interval of evaluation, None: 1eval/epoch 
-                'save_step': 4000,  
+                'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
+                'save_step': 2000,  
                 'save_strategy': 'epoch',
-                'early_stop': 10,
+                'early_stop': 20,
                 'eval_key': 'eval_ad_accuracy',
 
                 # inference config
-                'split_infer_sentence': False,
+                'pre_split_length_for_infer': None,
                 'max_infer_source_length': None,
                 'detection_only': False,
                 'test_split': False,
@@ -1156,7 +1156,7 @@ class Config:
                 'eval_key': 'eval_general_accuracy',
 
                 # inference config
-                'split_infer_sentence': False,
+                'pre_split_length_for_infer': False,
                 'max_infer_source_length': None,
                 'detection_only': False,
                 'test_split': False,
@@ -1235,7 +1235,7 @@ class Config:
                 'eval_key': 'eval_general_accuracy',
 
                 # inference config
-                'split_infer_sentence': False,
+                'pre_split_length_for_infer': False,
                 'max_infer_source_length': None,
                 'detection_only': False,
                 'test_split': False,
@@ -1250,7 +1250,7 @@ class Config:
             }
             return cn_lora_config
 
-        if self.args.lora:
+        if self.preconfig.lora:
             if self.dataset in ['lang8', 'clang8', 'c4', 'hybrid', 'wilocness', 'fce', 'nucle']:
                 return __EN_LORA()
             elif self.dataset in ['pretrain', 'mucgec', 'fangzhenggrammar', 'fangzhengspell', 'fcgec']:
@@ -1292,10 +1292,10 @@ class Config:
             'gradient_accumulation_steps': 8,
             'lr': 2e-5,
             'weight_decay': 1e-4,
-            'epoch': 2,
+            'epoch': 20,
             'train_batch_size': 16,
             'eval_batch_size': 16,
-            'warmup_steps': 1000,           # 之前FCGEC训练为100
+            'warmup_steps': 100,           # 之前FCGEC训练为100
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
 
@@ -1313,12 +1313,13 @@ class Config:
             'max_eval_target_length': 256,
 
             # evaluation config
-            'eval_step': 4000,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 4000,  
+            'eval_step': 200,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 200,  
             'eval_key': 'eval_loss',
             'predict_with_generate': False,
 
             # inference config
+            'pre_split_length_for_infer': None,
             'load_config_keys': ['source_prefix'],
             'num_beams': 12,
             'max_gen_len': 384,

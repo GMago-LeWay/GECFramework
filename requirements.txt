@@ -7,7 +7,7 @@ tqdm
 matplotlib
 pandas
 datasets>=2.14.0
-transformers
+transformers>=4.31.0
 wandb
 spacy
 # in some case, the language model in spacy must be downloaded

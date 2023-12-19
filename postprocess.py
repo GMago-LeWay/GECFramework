@@ -81,7 +81,39 @@ class PostProcess:
                 self.results[i]["predict"] = self.results[i]["predict"].replace(key, CN_MARKER_MAP[key])
 
     def _merge_split_test_sample(self):
-        raise NotImplementedError()
+        merged_results = []
+        assert self.results, "Result Null"
+        discourse_index = self.results[0].split('#')[0]
+        source_discourse_buff = ""
+        target_discourse_buff = ""
+        cur_item = None
+        for item in self.results:
+            cur_item = item
+            line = item["predict"]
+            line = line.strip()
+            cur_index, _, end = item["id"]
+            end = end.strip()
+            if cur_index == discourse_index:
+                source_discourse_buff += item["src"]
+                target_discourse_buff += line
+            else:
+                if "tgt" in item:
+                    merged_results.append({"id": discourse_index, "src": source_discourse_buff, "tgt": cur_item["tgt"], "predict": target_discourse_buff})
+                else:
+                    merged_results.append({"id": discourse_index, "src": source_discourse_buff, "predict": target_discourse_buff})
+                discourse_index = cur_index
+                source_discourse_buff = item["src"]
+                target_discourse_buff = line
+            if end != 'P':
+                target_discourse_buff = target_discourse_buff[:-1] + end
+        else:
+            if "tgt" in item:
+                merged_results.append({"id": discourse_index, "src": source_discourse_buff, "tgt": cur_item["tgt"], "predict": target_discourse_buff})
+            else:
+                merged_results.append({"id": discourse_index, "src": source_discourse_buff, "predict": target_discourse_buff})
+        
+        logger.info(f"Results length before merged: {len(self.results)}; After merged: {len(merged_results)}")
+        self.results = merged_results
 
     
     @staticmethod
@@ -216,7 +248,8 @@ class PostProcess:
                 self.results[i] = PostProcess.bea_postprocess(self.results[i])
             test_data[data_source].append(self.results[i])
 
-        CONLL14_NUM, BEA19_NUM = 1312, 4477    
+        CONLL14_NUM, BEA19_NUM = 1312, 4477
+        assert len(test_data["bea19"]) == BEA19_NUM and len(test_data['conll14']) == CONLL14_NUM
 
         # save file for further evaluation
         # conll14 evaluation
@@ -247,6 +280,8 @@ class PostProcess:
 
 
     def basic_saving(self):
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
         save_path = os.path.join(self.save_dir, f'{self.args.model}-{self.args.dataset}-{self.args.task_mode}.json')
         with codecs.open(save_path, "w", "utf-8") as f:
             json.dump(self.results, f, ensure_ascii=False, indent=4)
@@ -290,7 +325,7 @@ class PostProcess:
 
     def post_process_and_save(self):
         if 'post_process' in self.config:
-            if 'split_sentence' in self.config and PostProcessManipulator.merge_sample not in self.config.post_process:
+            if 'pre_split_length_for_infer' in self.config and self.config.pre_split_length_for_infer and PostProcessManipulator.merge_sample not in self.config.post_process:
                 logger.info(f"Auto Set: You enable split_sentence for the test set but you did not include {PostProcessManipulator.merge_sample} as a postprocess. Auto added it in the front.")
                 self.config.post_process.insert(0, PostProcessManipulator.merge_sample)
             for name in self.config.post_process:

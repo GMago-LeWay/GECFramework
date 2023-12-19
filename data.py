@@ -18,6 +18,7 @@ import traceback
 import scipy.io as sio
 import csv
 import glob
+import re
 
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
@@ -1470,6 +1471,11 @@ class GeneralDataset:
         else:
             self.wrapper = self.wrapper_map['default'](args, config)
 
+        if 'pretrained_model' in self.config:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.config.pretrained_model, trust_remote_code=True)
+        else:
+            self.tokenizer = None
+
 
     def get_dataset_map(self, split=False):
         '''
@@ -1484,11 +1490,15 @@ class GeneralDataset:
             for s in ['train', 'valid', 'test']:
                 if s not in dataset_map:
                     dataset_map[s] = []
+            if self.config.pre_split_length_for_infer and dataset_map["test"] != []:
+                dataset_map['test'] = self.split_sentence_for_dataset(dataset_map['test'], dataset_flag='test')
             return dataset_map
         else:
             train_set = self.wrapper.get_dataset('train')
             val_set = self.wrapper.get_dataset('valid')
             test_set = self.wrapper.get_dataset('test')
+            if self.config.pre_split_length_for_infer:
+                test_set = self.split_sentence_for_dataset(test_set, dataset_flag='test')
             return {'train': train_set, 'valid': val_set, 'test': test_set}
         
     def save_to_json(self, split: List[str] = None, new_dir: str = None):
@@ -1518,9 +1528,55 @@ class GeneralDataset:
             logger.info(f"Test Dataset has been save to {test_data_file}")
 
     def split_sentence_for_dataset(self, loaded_dataset, dataset_flag):
-        logger.info(f"Splitting sentences in {dataset_flag}. The id, text will be retained., id will be add a prefix for split order.")
-        def split_func():
-            pass
+        assert loaded_dataset, "Null Dataset"
+        logger.info(f"Splitting sentences in {dataset_flag}. The id, text will be retained. id will be add a prefix for split order. label will remain original shape without split.")
+        # if self.args.dataset == "mucgec":
+        #     rePERIOD = re.compile(r'(?<=，|,|。|!|！|\?|？)(?!”)')
+        # else:
+        #     rePERIOD = re.compile(r'(?<=，|,)')
+        rePERIOD = re.compile(r'(?<=，|,|。|!|！|\?|？)(?!”)')
+        new_dataset = []
+        max_len = self.config.pre_split_length_for_infer
+        for item in tqdm(loaded_dataset):
+            original_id = item["id"]
+            line = item["text"]
+            line = line.strip()
+            line = re.split(rePERIOD, line)
+            if line[-1] == '':
+                line = line[:-1]
+            idx = 0
+            buff = ''
+            for s in line:
+                # if longer than max lenght than split it
+                if len(self.tokenizer.encode(buff + s)) >= max_len and buff != '':
+                    new_id = f"{original_id}#{idx}#{buff[-1] if buff.endswith((',', '，')) else 'P'}"
+                    new_text = str(buff)
+                    new_dataset.append({"id": new_id, "text": new_text})
+                    idx += 1
+                    buff = s
+                else:
+                    buff += s
+                # if not end with comma split it!
+                if not buff.endswith((',', '，')) and self.args.dataset == "mucgec":
+                    new_id = f"{original_id}#{idx}#P"
+                    new_text = str(buff)
+                    new_dataset.append({"id": new_id, "text": new_text})
+                    idx += 1
+                    buff = ''
+            if buff != '':
+                new_id = f"{original_id}#{idx}#P"
+                new_text = str(buff)
+                if "label" in item:
+                    new_dataset.append({"id": new_id, "text": new_text, "label": item["label"]})
+                else:
+                    new_dataset.append({"id": new_id, "text": new_text})
+
+
+        dict_dataset = {"id": [item["id"] for item in new_dataset], "text": [item["text"] for item in new_dataset]}
+        if "label" in new_dataset[0]:
+            dict_dataset["label"] = [item["label"] for item in new_dataset]
+        logger.info(f"Inputs length before merged: {len(loaded_dataset)}; After merged: {len(new_dataset)}")
+        return datasets.Dataset.from_dict(dict_dataset)
 
 
 def get_data(dataset_name: str, model_name: str=None):
