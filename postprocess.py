@@ -83,7 +83,7 @@ class PostProcess:
     def _merge_split_test_sample(self):
         merged_results = []
         assert self.results, "Result Null"
-        discourse_index = self.results[0].split('#')[0]
+        discourse_index = self.results[0]["id"].split('#')[0]
         source_discourse_buff = ""
         target_discourse_buff = ""
         cur_item = None
@@ -91,7 +91,7 @@ class PostProcess:
             cur_item = item
             line = item["predict"]
             line = line.strip()
-            cur_index, _, end = item["id"]
+            cur_index, _, end = item["id"].split('#')
             end = end.strip()
             if cur_index == discourse_index:
                 source_discourse_buff += item["src"]

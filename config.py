@@ -894,14 +894,14 @@ class Config:
                 },
 
                 # data related train settings
-                'gradient_accumulation_steps': 10,
+                'gradient_accumulation_steps': 20,
                 'train_batch_size': 12,
                 'eval_batch_size': 8,
                 'detection_batch_size': 8,
 
                 # train settings
                 # parameters that are able to be tuned
-                'detection_loss_weight': 5,
+                'detection_loss_weight': 10,
                 'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
                 'epoch': 20,
                 'warmup_steps': 100,
@@ -916,7 +916,7 @@ class Config:
                 'save_step': 200,  
                 'save_strategy': 'epoch',
                 'early_stop': 20,
-                'eval_key': 'eval_general_accuracy',
+                'eval_key': 'eval_ad_accuracy',
 
                 # inference config
                 'pre_split_length_for_infer': False,
@@ -1077,7 +1077,7 @@ class Config:
                 'eval_key': 'eval_ad_accuracy',
 
                 # inference config
-                'pre_split_length_for_infer': None,
+                'pre_split_length_for_infer': 128,
                 'max_infer_source_length': None,
                 'detection_only': False,
                 'test_split': False,
@@ -1319,7 +1319,7 @@ class Config:
             'predict_with_generate': False,
 
             # inference config
-            'pre_split_length_for_infer': None,
+            'pre_split_length_for_infer': 128,
             'load_config_keys': ['source_prefix'],
             'num_beams': 12,
             'max_gen_len': 384,
