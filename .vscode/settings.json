@@ -17,6 +17,7 @@
         "**/wandb/**": true,
     },
     "explorer.excludeGitIgnore": false,
+    "csv-preview.numberFormat": "g4",
 }
 
 // {

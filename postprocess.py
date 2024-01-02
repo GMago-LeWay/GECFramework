@@ -7,7 +7,7 @@ import codecs
 from nltk import word_tokenize
 import re
 import codecs
-
+from utils.ChERRANT.main import compute_cherrant_with_ref_file
 import spacy
 en = spacy.load("en_core_web_sm")
 
@@ -36,9 +36,11 @@ RETOKENIZATION_RULES = [
 ]
 
 CONLL14_M2_FILE = 'utils/m2scorer/official-2014.combined.m2'
+MUCGEC_DEV_M2_FILE = '../datasets/MuCGEC/MuCGEC_dev/valid.gold.m2.char'
 
 class PostProcessManipulator:
     cn_marker = 'cn_marker'
+    mucgec_eval = 'mucgec_dev_eval'
     merge_sample = 'merge_sample'
     en_test = 'en_test'
     en_test_py3 = 'en_test_py3'
@@ -59,20 +61,24 @@ class PostProcess:
 
         # set save directory
         self.save_dir = os.path.join(args.save_dir, save_dir_name)
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
 
         self.post_process_func = {
             PostProcessManipulator.cn_marker: self._chinese_marker_substitute,
             PostProcessManipulator.merge_sample: self._merge_split_test_sample,
             PostProcessManipulator.en_test: self._en_conll_bea_postprocess_py2,
             PostProcessManipulator.en_test_py3: self._en_conll_bea_postprocess_py3,
+            PostProcessManipulator.mucgec_eval: self._mucgec_dev_evaluation,
             # 'spacy_retokenize': self._retokenize,
         }
 
         self.allowed_dataset = {
-            PostProcessManipulator.cn_marker: ['mucgec', 'fcgec', 'pretrain', 'fangzhenggrammar', 'fangzhengspell'],
+            PostProcessManipulator.cn_marker: ['mucgec', 'fcgec', 'pretrain', 'fangzhenggrammar', 'fangzhengspell', 'mucgec_dev'],
             PostProcessManipulator.merge_sample: ['mucgec', 'fcgec', 'pretrain', 'fangzhenggrammar', 'fangzhengspell', 'c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid'],
             PostProcessManipulator.en_test: ['c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid'],
-            PostProcessManipulator.en_test_py3: ['c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid']
+            PostProcessManipulator.en_test_py3: ['c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid'],
+            PostProcessManipulator.mucgec_eval: ['mucgec_dev'],
         }
 
     def _chinese_marker_substitute(self):
@@ -278,10 +284,23 @@ class PostProcess:
         with zipfile.ZipFile(os.path.join(self.save_dir, 'bea19.zip'), mode='w') as zipf:
             zipf.write(bea19_file_path, bea19_file_name)
 
+    def _mucgec_dev_evaluation(self):
+        ids = [item["id"] for item in self.results]
+        src_texts = [item["src"] for item in self.results]
+        predict_texts = [item["predict"] for item in self.results]
+        eval_information, eval_metrics = compute_cherrant_with_ref_file(
+            ids=ids,
+            src_texts=src_texts,
+            predict_texts=predict_texts,
+            ref_file=MUCGEC_DEV_M2_FILE,
+            device=self.args.device
+        )
+        evaluation_result_file = os.path.join(self.save_dir, 'mucgec_dev_eval.txt')
+        open(evaluation_result_file, 'w').write(eval_information)
+        evaluation_metric_file = os.path.join(self.save_dir, 'mucgec_dev_metrics.json')
+        json.dump(eval_metrics, open(evaluation_metric_file, 'w'), indent=4, ensure_ascii=False)
 
     def basic_saving(self):
-        if not os.path.exists(self.save_dir):
-            os.makedirs(self.save_dir)
         save_path = os.path.join(self.save_dir, f'{self.args.model}-{self.args.dataset}-{self.args.task_mode}.json')
         with codecs.open(save_path, "w", "utf-8") as f:
             json.dump(self.results, f, ensure_ascii=False, indent=4)
@@ -328,6 +347,9 @@ class PostProcess:
             if 'pre_split_length_for_infer' in self.config and self.config.pre_split_length_for_infer and PostProcessManipulator.merge_sample not in self.config.post_process:
                 logger.info(f"Auto Set: You enable split_sentence for the test set but you did not include {PostProcessManipulator.merge_sample} as a postprocess. Auto added it in the front.")
                 self.config.post_process.insert(0, PostProcessManipulator.merge_sample)
+            if self.args.dataset == 'mucgec_dev' and PostProcessManipulator.mucgec_eval not in self.config.post_process:
+                logger.info(f"Auto Set: You are using mucgec dev set for the test set but you did not include {PostProcessManipulator.mucgec_eval} as a postprocess. Auto added it in the rear.")
+                self.config.post_process.append(PostProcessManipulator.mucgec_eval)      
             for name in self.config.post_process:
                 # check if it is an allowed processing
                 allowed = False

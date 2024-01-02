@@ -53,6 +53,7 @@ def compare_m2(hyp_m2, ref_m2):
     print_results(best_dict, best_cats, args)
     # print(sent_id_cons)
     # print(len(sent_id_cons))
+    return return_results(best_dict, best_cats, args)
 
 def main():
     # Parse command line args
@@ -482,6 +483,43 @@ def print_results(best, best_cats, args):
         best["fn"]]+list(computeFScore(best["tp"], best["fp"], best["fn"], args.beta)))))
     print('{:=^46}'.format(""))
     print("")
+
+
+def return_results(best, best_cats, args):
+    log_str = ""
+    # Prepare output title.
+    if args.dt: title = " Token-Based Detection "
+    elif args.ds: title = " Span-Based Detection "
+    elif args.cse: title = " Span-Based Correction + Classification "
+    else: title = " Span-Based Correction "
+
+    # Category Scores
+    if args.cat:
+        best_cats = processCategories(best_cats, args.cat)
+        log_str += "\n"
+        log_str += '{:=^66}\n'.format(title)
+        log_str += " ".join(["Category".ljust(14), "TP".ljust(8), "FP".ljust(8), "FN".ljust(8),
+            "P".ljust(8), "R".ljust(8), "F"+str(args.beta)])
+        log_str += "\n"
+        for cat, cnts in sorted(best_cats.items()):
+            cat_p, cat_r, cat_f = computeFScore(cnts[0], cnts[1], cnts[2], args.beta)
+            log_str += " ".join([cat.ljust(14), str(cnts[0]).ljust(8), str(cnts[1]).ljust(8),
+                str(cnts[2]).ljust(8), str(cat_p).ljust(8), str(cat_r).ljust(8), cat_f])
+            log_str += '\n'
+
+    # Print the overall results.
+    log_str += '{:=^46}'.format(title)
+    log_str += "\n"
+    log_str += "\t".join(["TP", "FP", "FN", "Prec", "Rec", "F"+str(args.beta)])
+    log_str += "\n"
+    core_metrics_list = list(computeFScore(best["tp"], best["fp"], best["fn"], args.beta))
+    log_str += "\t".join(map(str, [best["tp"], best["fp"],
+        best["fn"]] + core_metrics_list))
+    log_str += "\n"
+    log_str += '{:=^46}\n'.format("")
+    core_metrics = {"precision": core_metrics_list[0], "recall": core_metrics_list[1], f"f_{args.beta}": core_metrics_list[2]}
+    return log_str, core_metrics
+
 
 if __name__ == "__main__":
     # Run the program

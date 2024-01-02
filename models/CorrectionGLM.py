@@ -10,23 +10,6 @@ from utils.GLM.modeling_glm import *
 logger = logging.getLogger(__name__)
 
 
-class StoppingCriteriaSub(StoppingCriteria):
-    def __init__(self, stops = [], encounters=3):
-        super().__init__()
-        self.stops = stops
-        self.ENCOUNTERS = encounters
-
-    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor):
-        assert input_ids.shape[0] == 1
-        stop_count = 0
-        for stop in self.stops:
-            stop_count = (stop == input_ids[0]).sum().item()
-
-        if stop_count >= self.ENCOUNTERS:
-            return True
-        return False
-
-
 class MultiFocalLoss(torch.nn.Module):
     """
     Focal_Loss= -1*alpha*((1-pt)**gamma)*log(pt)

@@ -1534,7 +1534,12 @@ class GeneralDataset:
         #     rePERIOD = re.compile(r'(?<=，|,|。|!|！|\?|？)(?!”)')
         # else:
         #     rePERIOD = re.compile(r'(?<=，|,)')
-        rePERIOD = re.compile(r'(?<=，|,|。|!|！|\?|？)(?!”)')
+        if self.args.dataset == "mucgec":
+            rePERIOD = re.compile(r'(?<=，|,|。|!|！|\?|？)(?!”)')
+        elif self.args.dataset == "wilocness":
+            rePERIOD = re.compile(r'(?<=\.|!|\?)(?!")')     # TODO: avoid split float number
+        else:
+            raise NotImplementedError()
         new_dataset = []
         max_len = self.config.pre_split_length_for_infer
         for item in tqdm(loaded_dataset):

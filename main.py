@@ -403,7 +403,10 @@ class ExperimentsOfGECBeta:
         if self.args.task_mode in ['infer', 'infer_train']:
             json_results = trainer.do_infer()
             process = PostProcess(self.args, config, json_results, 'test')
-            process.post_process_and_save()
+            if self.args.task_mode == 'infer':
+                process.post_process_and_save()
+            else:
+                process.basic_saving()
         elif self.args.task_mode in ['eval', 'eval_train']:
             json_results = trainer.do_eval()
             process = PostProcess(self.args, config, json_results, 'valid')
@@ -424,7 +427,7 @@ class ExperimentsOfGECBeta:
         if original_task_mode == TaskMode.train_and_eval_and_infer:
             logger.info("Start to evaluate on train set and validation set.")
             self.args.load = best_checkpoint
-            self.args.task_mode = TaskMode.eval_train
+            self.args.task_mode = TaskMode.infer_train
             json_results = self.run_infer(Storage(config))
             logger.info(f"Evaluation COMPLETE.")
 
@@ -435,20 +438,20 @@ class ExperimentsOfGECBeta:
         return json_results
     
     def run_custom(self, config):
-        assert self.args.model == 'correctionglm' and self.args.dataset == 'wilocness'
+        assert self.args.model == 'correctionglm' and self.args.dataset in ['wilocness', 'mucgec_dev']
         # threshold experiment
         self.args.task_mode = TaskMode.infer
         original_save_dir = str(self.args.save_dir)
 
-        # # keep threshold
-        # for th in np.arange(0.2, 0.44, 0.02):
-        #     th = round(th, 2)
-        #     config.keep_threshold = th
-        #     logger.info(f"KEEP threshold {th} inference:")
-        #     self.args.save_dir = os.path.join(original_save_dir, f'keep_threshold_{th}')
-        #     if not os.path.exists(self.args.save_dir):
-        #         os.makedirs(self.args.save_dir)
-        #     self.run_infer(config)
+        # keep threshold
+        for th in np.arange(0.2, 0.52, 0.02):
+            th = round(th, 2)
+            config.keep_threshold = th
+            logger.info(f"KEEP threshold {th} inference:")
+            self.args.save_dir = os.path.join(original_save_dir, f'keep_threshold_{th}')
+            if not os.path.exists(self.args.save_dir):
+                os.makedirs(self.args.save_dir)
+            self.run_infer(config)
         
         # # edit threshold
         # config.keep_threshold = None
@@ -464,7 +467,7 @@ class ExperimentsOfGECBeta:
         #         self.run_infer(config)
 
         # keep-edit threshold
-        for th in np.arange(0.32, 0.44, 0.02):
+        for th in np.arange(0.34, 0.42, 0.02):
             th = round(th, 2)
             config.keep_threshold = th
             result_f, result_p, result_r = {}, {}, {}
@@ -481,13 +484,22 @@ class ExperimentsOfGECBeta:
                     if not os.path.exists(self.args.save_dir):
                         os.makedirs(self.args.save_dir)
                     self.run_infer(config)
-                    # read conll14 result
-                    evaluation_result_file = os.path.join(self.args.save_dir, 'test', 'conll14_metrics.txt')
-                    # print metrics of conll14
-                    metrics_lines = open(evaluation_result_file).readlines()
-                    precision_name, _, precision = metrics_lines[0].strip().split()
-                    recall_name, _, recall = metrics_lines[1].strip().split()
-                    f_05_name, _, f_05 = metrics_lines[2].strip().split()
+                    if self.args.dataset == 'wilocness':
+                        # read conll14 result
+                        evaluation_result_file = os.path.join(self.args.save_dir, 'test', 'conll14_metrics.txt')
+                        # print metrics of conll14
+                        metrics_lines = open(evaluation_result_file).readlines()
+                        precision_name, _, precision = metrics_lines[0].strip().split()
+                        recall_name, _, recall = metrics_lines[1].strip().split()
+                        f_05_name, _, f_05 = metrics_lines[2].strip().split()
+                    elif self.args.dataset == 'mucgec_dev':
+                        evaluation_result_file = os.path.join(self.args.save_dir, 'test', 'mucgec_dev_metrics.json')
+                        metrics_item = json.load(open(evaluation_result_file))
+                        precision = metrics_item['precision']
+                        recall = metrics_item['recall']
+                        f_05 = metrics_item['f_0.5']
+                    else:
+                        raise NotImplementedError()
                     result_f[th1].append(f_05)
                     result_p[th1].append(precision)
                     result_r[th1].append(recall)
@@ -633,6 +645,7 @@ EXPERIMENTS = {
     'correctionglm': ExperimentsOfGECBeta,
     'seq2seqbeta': ExperimentsOfGECBeta,
     'seq2span': ExperimentsOfGECBeta,
+    'openai': ExperimentsOfGECBeta,
 }
 
 if __name__ == '__main__':

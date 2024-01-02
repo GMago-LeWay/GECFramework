@@ -100,7 +100,7 @@ def main(args):
 
 #### interface ###
 
-def annotate_independent(sent_list, segmented=False, no_simplified=True):
+def annotate_independent(sent_list, segmented=False, no_simplified=True, return_dict=False):
     """
     :param sent_list: [src, tgt1, tgt2,...] converted by one example
     :return:
@@ -138,7 +138,10 @@ def annotate_independent(sent_list, segmented=False, no_simplified=True):
             output["edit_labels"].append({'target_split': content, 'edits': []})
         elif code == 'A':
             output["edit_labels"][-1]["edits"].append(content)
-    return output
+    if return_dict:
+        return output
+    else:
+        return output_str
 
 
 def to_m2(

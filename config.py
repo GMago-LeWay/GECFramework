@@ -44,7 +44,8 @@ DATA_DIR_NAME = {
     'augment': "augment3",
     'fangzhengaugment': "FangZhengAugment",
     'fangzhengdapei': "FangZhengDapei",
-    'pretrain': "PreTrainSet",
+    'pretrain': "PreTrainSetLarge",
+    'mucgec_dev': "MuCGEC/MuCGEC_dev",
     'c4': "C4-200M",
     'wilocness': "WILocness",
     'fce': "FCE",
@@ -61,6 +62,7 @@ MODEL_CORR_DATA = {
     'gector': 'gector_data',
     'chatglm': 'transformers',
     'correctionglm': 'general',
+    'openai': 'general',
     'seq2seqbeta': 'general',
     'seq2span': 'general',
 }
@@ -90,6 +92,7 @@ class Config:
             'correctionglm': self.__CorrectionGLM,
             'seq2seqbeta': self.__Seq2SeqBeta,
             'seq2span': self.__Seq2Span,
+            'openai': self.__OpenAI,
             None: self.__NULL,
         }
 
@@ -808,6 +811,7 @@ class Config:
                 'max_train_source_length': 128,
                 'max_eval_source_length': 256,
                 'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+                'detection_load_way': 'detections',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
                 'detection_results': {
                     'train': None,
                     'valid': None,
@@ -827,7 +831,7 @@ class Config:
                 'epoch': 20,
                 'warmup_steps': 1000,
                 'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
-                'lr': 1e-5,
+                'lr': 3e-6,
                 'lr_scheduler': 'polynomial',
                 'weight_decay': 1e-4,
 
@@ -836,14 +840,13 @@ class Config:
                 'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
                 'save_step': 2000,  
                 'save_strategy': 'epoch',
-                'early_stop': 20,
+                'early_stop': 10,
                 'eval_key': 'eval_ad_accuracy',
 
                 # inference config
                 'pre_split_length_for_infer': False,
                 'max_infer_source_length': None,
                 'detection_only': False,
-                'test_split': False,
                 'post_process': [PPM.en_test_py3],       # Please refer postprocess to get functions: 'cn_marker'
                 # 'chinese_marker_substitution': True,
                 'load_config_keys': ['model_type', 'prompt', 'num_labels'],
@@ -887,6 +890,7 @@ class Config:
                 'max_train_source_length': 128,
                 'max_eval_source_length': 256,
                 'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+                'detection_load_way': 'detections',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
                 'detection_results': {
                     'train': None,
                     'valid': None,
@@ -906,7 +910,7 @@ class Config:
                 'epoch': 20,
                 'warmup_steps': 100,
                 'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
-                'lr': 5e-6,
+                'lr': 3e-6,
                 'lr_scheduler': 'polynomial',
                 'weight_decay': 1e-4,
 
@@ -915,14 +919,13 @@ class Config:
                 'eval_step': 200,        # steps interval of evaluation, None: 1eval/epoch 
                 'save_step': 200,  
                 'save_strategy': 'epoch',
-                'early_stop': 20,
+                'early_stop': 10,
                 'eval_key': 'eval_ad_accuracy',
 
                 # inference config
                 'pre_split_length_for_infer': False,
                 'max_infer_source_length': None,
                 'detection_only': False,
-                'test_split': False,
                 'post_process': [PPM.en_test_py3],       # Please refer postprocess to get functions: 'cn_marker'
                 # 'chinese_marker_substitution': True,
                 'load_config_keys': ['model_type', 'prompt', 'num_labels'],
@@ -966,9 +969,10 @@ class Config:
                 'max_train_source_length': 128,
                 'max_eval_source_length': 256,
                 'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+                'detection_load_way': 'masked_words',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
                 'detection_results': {
-                    'train': None,
-                    'valid': None,
+                    'train': 'results_debug/correctionglm-wilocness-infer_train-20240102-1514/train/detection_results.json',
+                    'valid': 'results_debug/correctionglm-wilocness-infer_train-20240102-1514/valid/detection_results.json',
                     'test': None,
                 },
 
@@ -994,14 +998,13 @@ class Config:
                 'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch 
                 'save_step': 2000,  
                 'save_strategy': 'epoch',
-                'early_stop': 20,
-                'eval_key': 'eval_general_accuracy',
+                'early_stop': 10,
+                'eval_key': 'eval_glm_accuracy',
 
                 # inference config
                 'pre_split_length_for_infer': False,
                 'max_infer_source_length': None,
                 'detection_only': False,
-                'test_split': False,
                 'post_process': [PPM.en_test_py3],       # Please refer postprocess to get functions: 'cn_marker'
                 # 'chinese_marker_substitution': True,
                 'load_config_keys': ['model_type', 'prompt', 'num_labels'],
@@ -1045,6 +1048,7 @@ class Config:
                 'max_train_source_length': 128,
                 'max_eval_source_length': 256,
                 'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+                'detection_load_way': 'detections',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
                 'detection_results': {
                     'train': None,
                     'valid': None,
@@ -1052,7 +1056,7 @@ class Config:
                 },
 
                 # data related train settings
-                'gradient_accumulation_steps': 8,
+                'gradient_accumulation_steps': 10,
                 'train_batch_size': 12,
                 'eval_batch_size': 8,
                 'detection_batch_size': 8,
@@ -1061,7 +1065,7 @@ class Config:
                 # parameters that are able to be tuned
                 'detection_loss_weight': 10,
                 'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
-                'epoch': 10,
+                'epoch': 20,
                 'warmup_steps': 1000,
                 'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
                 'lr': 1e-5,
@@ -1077,10 +1081,9 @@ class Config:
                 'eval_key': 'eval_ad_accuracy',
 
                 # inference config
-                'pre_split_length_for_infer': 128,
+                'pre_split_length_for_infer': False,
                 'max_infer_source_length': None,
                 'detection_only': False,
-                'test_split': False,
                 'post_process': [PPM.cn_marker],       # Please refer postprocess to get functions: 'cn_marker'
                 # 'chinese_marker_substitution': True,
                 'load_config_keys': ['model_type', 'prompt', 'num_labels'],
@@ -1124,6 +1127,7 @@ class Config:
                 'max_train_source_length': 128,
                 'max_eval_source_length': 256,
                 'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+                'detection_load_way': 'detections',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
                 'detection_results': {
                     'train': None,
                     'valid': None,
@@ -1138,7 +1142,7 @@ class Config:
 
                 # train settings
                 # parameters that are able to be tuned
-                'detection_loss_weight': 5,
+                'detection_loss_weight': 10,
                 'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
                 'epoch': 20,
                 'warmup_steps': 100,
@@ -1153,13 +1157,12 @@ class Config:
                 'save_step': 200,  
                 'save_strategy': 'epoch',
                 'early_stop': 20,
-                'eval_key': 'eval_general_accuracy',
+                'eval_key': 'eval_ad_accuracy',
 
                 # inference config
                 'pre_split_length_for_infer': False,
                 'max_infer_source_length': None,
                 'detection_only': False,
-                'test_split': False,
                 'post_process': [PPM.cn_marker],       # Please refer postprocess to get functions: 'cn_marker'
                 # 'chinese_marker_substitution': True,
                 'load_config_keys': ['model_type', 'prompt', 'num_labels'],
@@ -1203,6 +1206,7 @@ class Config:
                 'max_train_source_length': 128,
                 'max_eval_source_length': 256,
                 'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+                'detection_load_way': 'detections',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
                 'detection_results': {
                     'train': None,
                     'valid': None,
@@ -1232,13 +1236,12 @@ class Config:
                 'save_step': 200,  
                 'save_strategy': 'epoch',
                 'early_stop': 20,
-                'eval_key': 'eval_general_accuracy',
+                'eval_key': 'eval_glm_accuracy',
 
                 # inference config
                 'pre_split_length_for_infer': False,
                 'max_infer_source_length': None,
                 'detection_only': False,
-                'test_split': False,
                 'post_process': [PPM.cn_marker],       # Please refer postprocess to get functions: 'cn_marker'
                 # 'chinese_marker_substitution': True,
                 'load_config_keys': ['model_type', 'prompt', 'num_labels'],
@@ -1261,7 +1264,7 @@ class Config:
             return __EN_LARGE()
         elif self.dataset in ['hybrid', 'wilocness', 'fce', 'nucle']:
             return __EN()
-        elif self.dataset in ['pretrain', 'mucgec', 'fangzhenggrammar', 'fangzhengspell']:
+        elif self.dataset in ['pretrain', 'mucgec', 'fangzhenggrammar', 'fangzhengspell', 'mucgec_dev']:
             return __CN_LARGE()
         elif self.dataset in ['fcgec']:
             return __CN()
@@ -1323,7 +1326,7 @@ class Config:
             'load_config_keys': ['source_prefix'],
             'num_beams': 12,
             'max_gen_len': 384,
-
+            'post_process': [],
         }
 
         return NotImplementedError() if tune else Config
@@ -1391,10 +1394,34 @@ class Config:
             'keep_threshold': None,
             'num_beams': 12,
             'max_new_tokens': 10,
+            'post_process': [],
 
         }
 
         return NotImplementedError() if tune else Config
+    
+    def __OpenAI(self):
+        generation_config = {
+            'name': 'openai',
+
+            # api settings
+            'api_type': "azure",
+            'api_key': "agi",
+            'api_base': "http://modelserver.int.sit.xiaohongshu.com",
+            'api_version': "2023-03-15-preview",
+
+            # generation settings
+            'max_retry_num': 8,
+            'retry_time': 6,
+
+            # gec generation settings
+            'en_prompt': "Reply with a corrected version of the input sentence with all grammatical and spelling errors fixed. If there are no errors, reply with a copy of the original sentence.\n\nInput sentence: [TEXT]\nCorrected sentence: ",
+            'cn_prompt': "请改正输入语句中的所有语法和拼写错误，输出改正后的语句；如果输入语句没有错误，输出原来的语句。\n\n输入语句：[TEXT]\n改正后的语句：",
+            'pre_split_length_for_infer': False,
+            'post_process': [],
+
+        }
+        return generation_config
     
     def __Empty_Config(self):
         dataConfig = {

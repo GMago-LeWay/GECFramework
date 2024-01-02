@@ -15,6 +15,7 @@ MODULE_MAP = {
     'correctionglm': ('models.CorrectionGLM', 'GLMForGrammaticalCorrection'),
     'seq2seqbeta': ('models.Seq2SeqBeta', 'Seq2SeqModel'),
     'seq2span': ('models.Seq2Span', 'Seq2Span'),
+    'openai': ('models.OpenAI', 'OpenAICall'),
 }
 
 

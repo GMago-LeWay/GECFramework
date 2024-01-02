@@ -6,7 +6,7 @@ import numpy as np
 import math
 from scipy.stats import poisson
 from difflib import SequenceMatcher
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 from transformers import AutoTokenizer, AutoConfig
 import logging
 
@@ -37,9 +37,14 @@ def index_in_list(lst, val, start=None):
 
 
 class TokenizerBasedTextEditProcessor:
-    def __init__(self, tokenizer, without_insert=False, max_sequence_length=None) -> None:
+    def __init__(self, tokenizer, without_insert=False, max_sequence_length=None, task_mode=None) -> None:
         self.tokenizer = tokenizer
         self.max_sequence_length = max_sequence_length
+        self.task_mode = task_mode
+        if self.task_mode in ['infer_train', 'eval_train']:
+            logger.info("You are using infer train mode or eval train mode, split sentence to max_seq_len by default.")
+        else:
+            logger.info("Split sentence to max_seq_len // 3 by default.")
         self.keep_label = '$KEEP'
         self.insert_label = '$INSERT' # Notice that 'insert' means insertion AFTER the current token
         self.error_label = '$ERROR'
@@ -69,7 +74,10 @@ class TokenizerBasedTextEditProcessor:
         '''
         if max_sentence_length is None:
             if self.max_sequence_length:
-                max_sentence_length = self.max_sequence_length // 3
+                if self.task_mode in ['infer_train', 'eval_train']:
+                    max_sentence_length = self.max_sequence_length
+                else:
+                    max_sentence_length = self.max_sequence_length // 3
         tokens = self.tokenizer.encode(sentence)
         if max_sentence_length < len(tokens):
             if enable_warning:
@@ -211,7 +219,7 @@ class GLMDataProcessor:
             self.without_insert = True
         else:
             self.without_insert = False
-        self.edit_extractor = TokenizerBasedTextEditProcessor(self.tokenizer, without_insert=self.without_insert, max_sequence_length=self.max_length)
+        self.edit_extractor = TokenizerBasedTextEditProcessor(self.tokenizer, without_insert=self.without_insert, max_sequence_length=self.max_length, task_mode=args.task_mode)
         self.args = args
         self.config = config
         # edit settings
@@ -420,8 +428,8 @@ class GLMDataProcessor:
                     diff_end = idx2
                     while tgt_tokens[diff_end] != masked_tokens[idx1+1]:
                         diff_end += 1
-                    # check if next token is equal or masked
-                    # TODO: It is a temp processed method, more complicate situation would not be processed.
+                    # (legacy) check if next token is equal or masked
+                    # It is a temp processed method, more complicate situation would not be processed.
                     # if idx1 + 2 < len(masked_tokens) and masked_tokens[idx1+2] != self.tokenizer.mask_token_id:
                     #     if diff_end + 1 < len(tgt_tokens):
                     #         if masked_tokens[idx1+2] != tgt_tokens[diff_end+1]:
@@ -482,7 +490,8 @@ class GLMDataProcessor:
             'prefix_prompt_length': len(self.detection_prefix_tokens),
         }
 
-    def convert_gec_sentence_pair_to_example_using_detections(self, src: str, tgt: str, edit_prediction_ids: List[int], max_sentence_length: int = 100):
+    def convert_gec_sentence_pair_to_example_using_detections(self, src: str, tgt: str, edit_prediction_ids: List[int], max_sentence_length: int):
+        # use detection predictions as augment source to construct parallel training data
         global ERROR_NUM
         src_tokens, tgt_tokens, edits = self.edit_extractor.limited_split_sentence(src, tgt, max_sentence_length)
         edit_labels = self.edit_extractor.edit_labels(edits=edits, src_tokens=src_tokens, tgt_tokens=tgt_tokens)
@@ -493,16 +502,108 @@ class GLMDataProcessor:
         except:
             ERROR_NUM += 1
             logger.info(f"({ERROR_NUM})ERROR Occured while converting data.")
-            example = {
-                'input_ids': np.array([], dtype=int), 
-                'target_ids': np.array([], dtype=int), 
-                'position_ids': np.array([[],[]], dtype=int),
-                'source_length': 0,
-            }
-            train_example = self.add_detection_prefix(example, src_tokens=src_tokens, edit_labels=[self.ignore_label]*len(edit_labels))
+            # example = {
+            #     'input_ids': np.array([], dtype=int), 
+            #     'target_ids': np.array([], dtype=int), 
+            #     'position_ids': np.array([[],[]], dtype=int),
+            #     'source_length': 0,
+            # }
+            # train_example = self.add_detection_prefix(example, src_tokens=src_tokens, edit_labels=[self.ignore_label]*len(edit_labels))
+            train_example =  self.convert_gec_sentence_pair_to_example(src=src, tgt=tgt, max_sentence_length=max_sentence_length)
         assert train_example['input_ids'].dtype == train_example['input_ids'].dtype == train_example['detection_labels'].dtype == train_example['position_ids'].dtype == int
         assert type(train_example['source_length']) == type(train_example['prefix_length']) == type(train_example['prefix_prompt_length']) == int
         return train_example
+    
+    def convert_gec_sentence_pair_to_example_using_masked_text(self, src: str, tgt: str, masked_text: Union[str, List[str]], max_sentence_length: int = 100):
+        '''
+        use masked text or masked words list as augment source to construct parallel training data
+        '''
+        # use masked text as augment source to construct parallel training data
+        # convert to detection predictions in the condition of current tokenizer
+        # align source text and masked text
+        original_src_tokens = self.edit_extractor.split_sentence(src, self.max_length, enable_warning=True)
+        if type(masked_text) == str:
+            masked_src_tokens = self.edit_extractor.split_sentence(masked_text, self.max_length, enable_warning=True)
+        elif type(masked_text) == list:
+            masked_src_tokens = self.tokenizer.convert_tokens_to_ids(masked_text)[:self.max_length-2]
+            # add special tokens
+            if original_src_tokens[0] in self.tokenizer.all_special_ids:
+                masked_src_tokens.insert(0, original_src_tokens[0])
+            if original_src_tokens[-1] in self.tokenizer.all_special_ids:
+                masked_src_tokens.append(original_src_tokens[-1])
+        else:
+            raise NotImplementedError()
+
+        mask_positions = []
+        for i, token in enumerate(masked_src_tokens):
+            if token == self.tokenizer.mask_token_id:
+                mask_positions.append(i)
+        global SEQUENCE_MATCH_ERROR_NUM, ERROR_NUM
+        try:
+            try:
+                r = SequenceMatcher(None, original_src_tokens, masked_src_tokens)
+                diffs = r.get_opcodes()
+
+                generation_edits = []
+                # check if every span corresponding to one MASK
+                for diff in diffs:
+                    if diff[0] == 'equal':
+                        continue
+                    else:
+                        generation_edits.append(diff)
+                assert len(generation_edits) == len(mask_positions), f"source_tokens: {original_src_tokens}\nmasked_tokens: {masked_src_tokens}\n auto_edits: {generation_edits}"
+            except:
+                SEQUENCE_MATCH_ERROR_NUM += 1
+                logger.info(f"Sequence Matcher Failed({SEQUENCE_MATCH_ERROR_NUM}), trying to re-aligned...")
+                generation_edits = []
+                # traditional match
+                idx1, idx2 = 0, 0
+                while idx1 < len(original_src_tokens) and idx2 < len(masked_src_tokens):
+                    if original_src_tokens[idx1] == masked_src_tokens[idx2]:
+                        idx1 += 1
+                        idx2 += 1
+                    else:
+                        assert masked_src_tokens[idx2] == self.tokenizer.mask_token_id, f"source_tokens: {original_src_tokens}\nmasked_tokens: {masked_src_tokens}\nsource: {self.tokenizer.decode(original_src_tokens)}\n masked: {self.tokenizer.decode(masked_src_tokens)}\n"
+                        # notice that the last token would not be [MASK] because the last edit label will be set to "$KEEP" 
+                        diff_start = idx1
+                        diff_end = idx1
+                        while original_src_tokens[diff_end] != masked_src_tokens[idx2+1]:
+                            diff_end += 1
+                        # check if next token is equal or masked
+                        # Raise Error when complicated situation encountered.
+                        if diff_start == diff_end:
+                            generation_edits.append(('insert', diff_start, diff_end, idx2, idx2+1))
+                        else:
+                            generation_edits.append(('replace', diff_start, diff_end, idx2, idx2+1))
+                        idx2 += 1
+                        idx1 = diff_end
+                assert idx1 == len(original_src_tokens) and idx2 == len(masked_src_tokens), f"source_tokens: {original_src_tokens}\nmasked_tokens: {masked_src_tokens}\n auto_edits: {generation_edits}"
+                assert len(generation_edits) == len(mask_positions), f"source_tokens: {original_src_tokens}\nmasked_tokens: {masked_src_tokens}\n auto_edits: {generation_edits}"
+            
+            # convert to detecion labels
+            basic_label = [self.keep_label] * len(original_src_tokens)
+            for edit in generation_edits:
+                edit_type, start, end, _, _ = edit
+                if edit_type == 'insert':
+                    basic_label[end-1] = self.insert_label
+                else:
+                    for idx in range(start, end):
+                        basic_label[idx] = self.error_label
+            
+            # use detection predictions as augment source to construct parallel training data
+            src_tokens, tgt_tokens, edits = self.edit_extractor.limited_split_sentence(src, tgt, max_sentence_length)
+            edit_labels = self.edit_extractor.edit_labels(edits=edits, src_tokens=src_tokens, tgt_tokens=tgt_tokens)
+            example = self.from_detection_results_to_augmented_glm_example(basic_label[:len(src_tokens)], edit_labels, src_tokens, tgt_tokens)
+            train_example = self.add_detection_prefix(example, src_tokens=src_tokens, edit_labels=edit_labels)
+        except Exception as e:
+            ERROR_NUM += 1
+            logger.info(f"({ERROR_NUM})ERROR Occured while converting to training data using masked text.")
+            train_example = self.convert_gec_sentence_pair_to_example(src=src, tgt=tgt, max_sentence_length=max_sentence_length)
+        assert train_example['input_ids'].dtype == train_example['input_ids'].dtype == train_example['detection_labels'].dtype == train_example['position_ids'].dtype == int
+        assert type(train_example['source_length']) == type(train_example['prefix_length']) == type(train_example['prefix_prompt_length']) == int
+        # TODO: example check in masked_words mode
+        return train_example
+
     
     def convert_gec_sentence_pair_to_example(self, src: str, tgt: str, max_sentence_length: int = 100):
         # src_tokens, tgt_tokens = self.edit_extractor.split_sentence(src), self.edit_extractor.split_sentence(tgt)
@@ -517,7 +618,7 @@ class GLMDataProcessor:
 
     def convert_gec_sentence_pair_to_detection_example(self, src: str, tgt: str, max_sentence_length: int = 100):
         '''
-        TODO: 将句子对转换为纯检测器的训练样本
+        将句子对转换为纯检测器的训练样本
         '''
         # src_tokens, tgt_tokens = self.edit_extractor.split_sentence(src), self.edit_extractor.split_sentence(tgt)
         # edits = self.edit_extractor.edit(src_tokens, tgt_tokens)
@@ -552,13 +653,24 @@ class GLMDataProcessor:
         infer_example = self.add_detection_prefix(example, src_tokens=src_tokens, edit_labels=edit_labels)
         return infer_example
 
-    def convert_masked_sentence_to_infer_example(self, src: str, masked_text: str, max_sentence_length: int):
+    def convert_masked_sentence_to_infer_example(self, src: str, masked_text: Union[str, List[str]], max_sentence_length: int):
         '''
-        TODO: 根据检错模型输出的MASK文本转换出用于生成的样本
+        根据检错模型输出的MASK文本转换出用于生成的样本
         '''
         # tokenize
         src_tokens = self.edit_extractor.split_sentence(src, max_sentence_length=max_sentence_length)
-        masked_src_tokens = self.edit_extractor.split_sentence(masked_text, max_sentence_length=max_sentence_length)
+        # masked_src_tokens = self.edit_extractor.split_sentence(masked_text, max_sentence_length=max_sentence_length)
+        if type(masked_text) == str:
+            masked_src_tokens = self.edit_extractor.split_sentence(masked_text, max_sentence_length=max_sentence_length, enable_warning=True)
+        elif type(masked_text) == list:
+            masked_src_tokens = self.tokenizer.convert_tokens_to_ids(masked_text)[:max_sentence_length-2]
+            # add special tokens
+            if src_tokens[0] in self.tokenizer.all_special_ids:
+                masked_src_tokens.insert(0, src_tokens[0])
+            if src_tokens[-1] in self.tokenizer.all_special_ids:
+                masked_src_tokens.append(src_tokens[-1])
+        else:
+            raise NotImplementedError()
 
         # find [MASK]
         source_tokens = masked_src_tokens
@@ -584,6 +696,7 @@ class GLMDataProcessor:
         }
         edit_labels = [self.keep_label]*len(src_tokens)
         infer_example = self.add_detection_prefix(example, src_tokens=src_tokens, edit_labels=edit_labels)
+        # TODO: check example in masked words mode.
         return infer_example
 
 

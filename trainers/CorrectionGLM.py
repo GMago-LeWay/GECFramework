@@ -16,6 +16,7 @@ from transformers import (
     AutoConfig,
     AutoTokenizer,
     AutoModelForSeq2SeqLM,
+    RobertaTokenizer,
     HfArgumentParser,
     Trainer,
     TrainingArguments,
@@ -201,6 +202,7 @@ class CorrectionGLMTrainer(TrainerBeta):
         return _preprocess_detection_model if detection_model else _preprocess
     
     def _get_train_preprocess_function_using_predictions(self, for_validation=False):
+        # using predictions in form of detection labels, when tokenizer are same
         def _preprocess(examples):
             processed = {}
             for i in range(len(examples['text'])):
@@ -215,7 +217,42 @@ class CorrectionGLMTrainer(TrainerBeta):
                 for key in result:
                     processed[key].append(result[key])
             return processed
-        return _preprocess
+        # using predictions in form of masked text, when tokenizer are not same
+        def _preprocess_with_masked_text(examples):
+            processed = {}
+            for i in range(len(examples['text'])):
+                src, tgt = examples['text'][i], examples['label'][i]
+                ## id check
+                assert examples["id"][i] == examples["check_id"][i]
+                result = self.data_processor.convert_gec_sentence_pair_to_example_using_masked_text(src, tgt, examples["masked_text"][i],
+                            self.settings.max_eval_source_length if for_validation else self.settings.max_train_source_length)
+                if not processed:
+                    for key in result:
+                        processed[key] = []
+                for key in result:
+                    processed[key].append(result[key])
+            return processed
+        # using predictions in form of masked text, when tokenizer are not same
+        def _preprocess_with_masked_words(examples):
+            processed = {}
+            for i in range(len(examples['text'])):
+                src, tgt = examples['text'][i], examples['label'][i]
+                ## id check
+                assert examples["id"][i] == examples["check_id"][i]
+                result = self.data_processor.convert_gec_sentence_pair_to_example_using_masked_text(src, tgt, examples["masked_words"][i],
+                            self.settings.max_eval_source_length if for_validation else self.settings.max_train_source_length)
+                if not processed:
+                    for key in result:
+                        processed[key] = []
+                for key in result:
+                    processed[key].append(result[key])
+            return processed
+        if self.settings.detection_load_way == "detections":
+            return _preprocess
+        elif self.settings.detection_load_way == "masked_text":
+            return _preprocess_with_masked_text
+        elif self.settings.detection_load_way == "masked_words":
+            return _preprocess_with_masked_words
     
     def _get_detection_preprocess_function(self, max_sentence_length):
         def _preprocess(examples):
@@ -277,8 +314,13 @@ class CorrectionGLMTrainer(TrainerBeta):
                 detection_results = json.load(open(self.settings.detection_results['train']))
                 assert len(self.dataset['train']) == len(detection_results), f"Using uncompatible detection results for current training set. {len(self.dataset['train'])}, {len(detection_results)}"
                 logger.info(f"Loaded previous detection results from {self.settings.detection_results['train']}")
-                self.dataset['train'] = self.dataset['train'].add_column('detections', [item['detections'] for item in detection_results])
                 self.dataset['train'] = self.dataset['train'].add_column('check_id', [item['id'] for item in detection_results])
+                if self.settings.detection_load_way == "masked_text":
+                    self.dataset['train'] = self.dataset['train'].add_column('masked_text', [item['masked_text'] for item in detection_results])
+                elif self.settings.detection_load_way == "masked_words":
+                    self.dataset['train'] = self.dataset['train'].add_column('masked_words', [item['masked_words'] for item in detection_results])
+                else:
+                    self.dataset['train'] = self.dataset['train'].add_column('detections', [item['detections'] for item in detection_results])
                 logger.info(f"Added detections into train dataset.")
                 columns = self.dataset['train'].column_names
                 reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_length']
@@ -291,7 +333,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                     batched=True,
                     remove_columns=removed_columns,
                     load_from_cache_file=self.settings.load_cache,
-                    cache_file_name=self._get_data_cache_name(f"train_using_pred_{self.settings.max_train_source_length}"),
+                    cache_file_name=self._get_data_cache_name(f"train_using_pred_{self.settings.detection_load_way}_{self.settings.max_train_source_length}"),
                     num_proc=self.settings.num_proc_trainset,
                     desc="Running preprocessing on train dataset",
                 )
@@ -346,8 +388,13 @@ class CorrectionGLMTrainer(TrainerBeta):
                 detection_results = json.load(open(self.settings.detection_results['valid']))
                 assert len(self.dataset['valid']) == len(detection_results), f"Using uncompatible detection results for current validation set. {len(self.dataset['valid'])}, {len(detection_results)}"
                 logger.info(f"Loaded previous detection results from {self.settings.detection_results['valid']}")
-                self.dataset['valid'] = self.dataset['valid'].add_column('detections', [item['detections'] for item in detection_results])
                 self.dataset['valid'] = self.dataset['valid'].add_column('check_id', [item['id'] for item in detection_results])
+                if self.settings.detection_load_way == "masked_text":
+                    self.dataset['valid'] = self.dataset['valid'].add_column('masked_text', [item['masked_text'] for item in detection_results])
+                elif self.settings.detection_load_way == "masked_words":
+                    self.dataset['valid'] = self.dataset['valid'].add_column('masked_words', [item['masked_words'] for item in detection_results])
+                else:
+                    self.dataset['valid'] = self.dataset['valid'].add_column('detections', [item['detections'] for item in detection_results])
                 logger.info(f"Added detections into validation dataset.")
                 columns = self.dataset['valid'].column_names
                 reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_length']
@@ -360,7 +407,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                     batched=True,
                     remove_columns=removed_columns,
                     load_from_cache_file=self.settings.load_cache,
-                    cache_file_name=self._get_data_cache_name(f"valid_using_pred_{self.settings.max_eval_source_length}"),
+                    cache_file_name=self._get_data_cache_name(f"valid_using_pred_{self.settings.detection_load_way}_{self.settings.max_eval_source_length}"),
                     desc="Running preprocessing on valid dataset",
                 )
             else:
@@ -529,26 +576,29 @@ class CorrectionGLMTrainer(TrainerBeta):
             assert len(detection_results) == len(self.dataset[split]), f"Uncompatible detection results from {self.settings.detection_results['infer']}"
             for i in range(len(detection_results)):
                 assert detection_results[i]["id"] == self.dataset[split][i]["id"], f"Uncompatible detection results from {self.settings.detection_results['infer']}"
-            # add masked text to test dataset and transform
-            # transform test dataset for generation
-            # load masked text: TODO Debug
-            # self.dataset[split] = self.dataset[split].add_column('masked_text', [item["masked_text"] for item in detection_results])
-            # reserved_columns = ['id', 'text', 'label']
-            # test_dataset_for_generation = []
-            # for i, item in tqdm(enumerate(self.dataset[split])):
-            #     result = self.data_processor.convert_masked_sentence_to_infer_example(item['text'], item['masked_text'])
-            #     for key in reserved_columns:
-            #         if key in item:
-            #             result[key] = item[key]
-            #     test_dataset_for_generation.append(result)
+
             # load detections
             self.test_dataset_transform(split)
-            self.test_dataset = self.test_dataset.add_column('detection_predictions', [item["detections"] for item in detection_results])
+            if self.settings.detection_load_way == 'detections':
+                self.test_dataset = self.test_dataset.add_column('detection_predictions', [item["detections"] for item in detection_results])
+            elif self.settings.detection_load_way == "masked_text":
+                self.test_dataset = self.test_dataset.add_column('masked_text', [item["masked_text"] for item in detection_results])
+            else:
+                self.test_dataset = self.test_dataset.add_column('masked_words', [item["masked_words"] for item in detection_results])
             test_dataset_for_generation = []
             reserved_columns = ['id', 'text', 'label']
             for i, item in tqdm(enumerate(self.test_dataset)):
                 src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
-                result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, item['detection_predictions'])
+                if self.settings.detection_load_way == 'detections':
+                    result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, item['detection_predictions'])
+                elif self.settings.detection_load_way == "masked_text":
+                    # TODO: check, adjust mode to masked_text
+                    result = self.data_processor.convert_masked_sentence_to_infer_example(item['text'], item['masked_text'], self.settings.max_infer_source_length)
+                elif self.settings.detection_load_way == "masked_words":
+                    # TODO: check, adjust mode to masked_words
+                    result = self.data_processor.convert_masked_sentence_to_infer_example(item['text'], item['masked_words'], self.settings.max_infer_source_length)
+                else:
+                    raise NotImplementedError()
                 for key in reserved_columns:
                     if key in item:
                         result[key] = item[key]
@@ -584,8 +634,14 @@ class CorrectionGLMTrainer(TrainerBeta):
                 edit_label_predictions.extend([detection_predictions[i][prefix_prompt_length[i]:prefix_length[i]] for i in range(batch_size)])
             self.test_dataset = self.test_dataset.add_column('detection_predictions', edit_label_predictions)
 
+            # In two situations, the mode will be set to detection only:
+            # 1. model is only detection model
             if self.settings.model_type == 'detection':
                 logger.info("Warning: Because the detection model mode is chosen, The inference will be done under detection-only mode")
+                self.settings.detection_only = True
+            # 2. in eval_train mode, CorrectionGLM will only output detection in current settings. If needed, this limit can be canceled.
+            if self.args.task_mode == 'infer_train':
+                logger.info("Warning: In current settings, The inference of train and valid set will be done under detection-only mode")
                 self.settings.detection_only = True
 
             ## detection-only mode
@@ -595,9 +651,26 @@ class CorrectionGLMTrainer(TrainerBeta):
                 for i, item in enumerate(self.test_dataset):
                     src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
                     masked_example = self.data_processor.from_edit_label_to_masked_example([self.data_processor.edit_label_id_map[idx] for idx in item['detection_predictions']], src_tokens)
-                    masked_text = self.tokenizer.decode(masked_example['input_ids'])
+                    # post process to get pure masked text, ensure that encode(masked_text) equals to input_ids of masked_text (token ids can be recovered from text)
+                    masked_ids = list(masked_example["input_ids"])
+                    if masked_ids[0] in self.tokenizer.all_special_ids:
+                        masked_ids = masked_ids[1:]
+                    if masked_ids[-1] in self.tokenizer.all_special_ids:
+                        masked_ids = masked_ids[:-1]
+                    # in glm-roberta-large GLM tokenizer, [MASK] will be decoded with an extra blank, maybe a bug of GLM modeling?
+                    if os.path.basename(self.settings.pretrained_model) == 'glm-roberta-large':
+                        masked_text = self.tokenizer.decode(masked_ids, clean_up_tokenization_spaces=False)
+                        masked_text = masked_text.replace('[MASK] ', '[MASK]')
+                    else:
+                        masked_text = self.tokenizer.decode(masked_ids)
+                    # check if can be recovered
+                    try:
+                        assert self.tokenizer.encode(masked_text) == list(masked_example['input_ids']), (self.tokenizer.encode(masked_text), list(masked_example['input_ids']))
+                    except Exception as e:
+                        logger.info(f"ERROR while checking: {masked_text} NOT EQUAL TO {self.tokenizer.decode(masked_example['input_ids'])}")
+
                     example_id = item['id']
-                    save_items.append({"id": example_id, "masked_text": masked_text, "source_tokens": src_tokens, "detections": edit_label_predictions[i]})
+                    save_items.append({"id": example_id, "masked_text": masked_text, "masked_words": self.tokenizer.convert_ids_to_tokens(masked_ids), "source_tokens": src_tokens, "detections": edit_label_predictions[i]})
                 json.dump(save_items, open(os.path.join(save_dir, 'detection_results.json'), 'w'), indent=4, ensure_ascii=False)
                 return []
             
@@ -787,7 +860,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             self.settings.detection_only = True
 
         if self.settings.detection_only:
-            logger.info("Attention: Detection-only mode. Saving Detections...")
+            logger.info("Attention: Detection-only mode. Saving Detections... (if masked text is required, please use eval mode.)")
             save_items = []
             for i, item in enumerate(self.test_dataset):
                 src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]

@@ -34,6 +34,9 @@ peft
 # if load_in_8bit
 # bitsandbytes
 
+# OpenAI need...
+openai==0.27.8
+
 # others
 # xpinyin
 # pypinyin

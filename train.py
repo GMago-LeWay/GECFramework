@@ -15,6 +15,7 @@ MODULE_MAP = {
     'correctionglm': ('trainers.CorrectionGLM', 'CorrectionGLMTrainer'),
     'seq2seqbeta': ('trainers.Seq2SeqBeta', 'Seq2SeqBetaTrainer'),
     'seq2span': ('trainers.Seq2Span', 'Seq2SpanTrainer'),
+    'openai': ('trainers.OpenAI', 'OpenAIUser'),
 }
 
 
