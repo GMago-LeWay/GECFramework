@@ -71,7 +71,7 @@ class MultiFocalLoss(torch.nn.Module):
 
 def GLMForGrammaticalCorrection(args, settings):
     model = GLMForGrammaticalCorrectionModel(args, settings)
-    if args.lora:
+    if settings.use_lora:
         if args.load is None:
             # for n, p in model.named_parameters():
             #     print(n)

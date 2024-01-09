@@ -1534,7 +1534,7 @@ class GeneralDataset:
         #     rePERIOD = re.compile(r'(?<=，|,|。|!|！|\?|？)(?!”)')
         # else:
         #     rePERIOD = re.compile(r'(?<=，|,)')
-        if self.args.dataset == "mucgec":
+        if self.args.dataset in ["mucgec", "fangzhenggrammar"]:
             rePERIOD = re.compile(r'(?<=，|,|。|!|！|\?|？)(?!”)')
         elif self.args.dataset == "wilocness":
             rePERIOD = re.compile(r'(?<=\.|!|\?)(?!")')     # TODO: avoid split float number
@@ -1556,7 +1556,10 @@ class GeneralDataset:
                 if len(self.tokenizer.encode(buff + s)) >= max_len and buff != '':
                     new_id = f"{original_id}#{idx}#{buff[-1] if buff.endswith((',', '，')) else 'P'}"
                     new_text = str(buff)
-                    new_dataset.append({"id": new_id, "text": new_text})
+                    if "label" in item:
+                        new_dataset.append({"id": new_id, "text": new_text, "label": item["label"]})
+                    else:
+                        new_dataset.append({"id": new_id, "text": new_text})
                     idx += 1
                     buff = s
                 else:
@@ -1565,7 +1568,10 @@ class GeneralDataset:
                 if not buff.endswith((',', '，')) and self.args.dataset == "mucgec":
                     new_id = f"{original_id}#{idx}#P"
                     new_text = str(buff)
-                    new_dataset.append({"id": new_id, "text": new_text})
+                    if "label" in item:
+                        new_dataset.append({"id": new_id, "text": new_text, "label": item["label"]})
+                    else:
+                        new_dataset.append({"id": new_id, "text": new_text})
                     idx += 1
                     buff = ''
             if buff != '':

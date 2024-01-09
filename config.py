@@ -1,8 +1,11 @@
 import random
 import logging
 import os
+import json
 from utils.JointSTG import TAGGER_MAP
 from postprocess import PostProcessManipulator as PPM
+
+logger = logging.getLogger(__name__)
 
 class Storage(dict):
     """
@@ -779,497 +782,93 @@ class Config:
     def __CorrectionGLM(self, tune):
         import torch
 
-        def __EN_LARGE():
-            large_en_config = {
-                # identifier
-                'name': 'correctionglm',
+        default_config = {
+            # identifier
+            'name': 'correctionglm',
 
-                # pretrained model
-                'language_model': True,
-                'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-roberta-large'),
+            # pretrained model
+            'language_model': True,
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-roberta-large'),
 
-                # model config
-                'torch_dtype': None,
-                'use_lora': False,
-                'bf16': False,
-                'ds_config': None,
-                'load_in_8bit': False,
+            # model config
+            'torch_dtype': None,
+            'use_lora': False,
+            'bf16': False,
+            'ds_config': None,
+            'load_in_8bit': False,
 
-                # model parameters
-                'model_type': 'all',        # model type: all, detection, generate
-                'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
-                'output_dropout_prob': 0.2,        # detection head dropout
-                'loss_ignore_id': -100,
-                'loss_detach': False,
-                'loss_reduce': 'mean',
+            # model parameters
+            'model_type': 'all',        # model type: all, detection, generate
+            'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
+            'output_dropout_prob': 0.2,        # detection head dropout
+            'loss_ignore_id': -100,
+            'loss_detach': False,
+            'loss_reduce': 'mean',
 
-                # data process parameters
-                'cache_dir': '.cache',
-                'load_cache': True,
-                'streaming': False,
-                'num_proc_trainset': None,
-                'max_train_source_length': 128,
-                'max_eval_source_length': 256,
-                'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
-                'detection_load_way': 'detections',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
-                'detection_results': {
-                    'train': None,
-                    'valid': None,
-                    'test': None,
-                },
+            # data process parameters
+            'cache_dir': '.cache',
+            'load_cache': True,
+            'streaming': False,
+            'num_proc_trainset': None,
+            'max_train_source_length': 128,
+            'max_eval_source_length': 256,
+            'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+            'detection_load_way': 'detections',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
+            'detection_results': {
+                'train': None,
+                'valid': None,
+                'test': None,
+            },
 
-                # data related train settings
-                'gradient_accumulation_steps': 20,
-                'train_batch_size': 12,
-                'eval_batch_size': 8,
-                'detection_batch_size': 8,
+            # data related train settings
+            'gradient_accumulation_steps': 20,
+            'train_batch_size': 12,
+            'eval_batch_size': 8,
+            'detection_batch_size': 8,
 
-                # train settings
-                # parameters that are able to be tuned
-                'detection_loss_weight': 10,
-                'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
-                'epoch': 20,
-                'warmup_steps': 1000,
-                'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
-                'lr': 3e-6,
-                'lr_scheduler': 'polynomial',
-                'weight_decay': 1e-4,
+            # train settings
+            # parameters that are able to be tuned
+            'detection_loss_weight': 10,
+            'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
+            'epoch': 20,
+            'warmup_steps': 1000,
+            'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
+            'lr': 1e-5,
+            'lr_scheduler': 'polynomial',
+            'weight_decay': 1e-4,
 
-                # evaluation config
-                'logging_steps': 10,
-                'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
-                'save_step': 2000,  
-                'save_strategy': 'epoch',
-                'early_stop': 10,
-                'eval_key': 'eval_ad_accuracy',
+            # evaluation config
+            'logging_steps': 10,
+            'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 2000,  
+            'save_strategy': 'epoch',
+            'early_stop': 10,
+            'eval_key': 'eval_ad_accuracy',
 
-                # inference config
-                'pre_split_length_for_infer': False,
-                'max_infer_source_length': None,
-                'detection_only': False,
-                'post_process': [PPM.en_test_py3],       # Please refer postprocess to get functions: 'cn_marker'
-                # 'chinese_marker_substitution': True,
-                'load_config_keys': ['model_type', 'prompt', 'num_labels'],
-                'keep_threshold': None,         # any position which has $KEEP probability > keep_threshold will be set to $KEEP
-                'error_threshold': None,        # any position which has $ERROR probability < error_threshold will never be set to $ERROR
-                'insert_threshold': None,       # any position which has $ERROR probability < insert_threshold will never be set to $INSERT
-                'num_beams': 3,
-                'max_new_tokens': 10,
-            }
-            return large_en_config
+            # inference config
+            'pre_split_length_for_infer': None,
+            'max_infer_source_length': None,
+            'detection_only': False,
+            'post_process': [PPM.en_test_py3],       # Please refer postprocess to get functions: 'cn_marker'
+            # 'chinese_marker_substitution': True,
+            'load_config_keys': ['model_type', 'prompt', 'num_labels'],
+            'keep_threshold': None,         # any position which has $KEEP probability > keep_threshold will be set to $KEEP
+            'error_threshold': None,        # any position which has $ERROR probability < error_threshold will never be set to $ERROR
+            'insert_threshold': None,       # any position which has $ERROR probability < insert_threshold will never be set to $INSERT
+            'num_beams': 3,
+            'max_new_tokens': 10,
+        }
         
-        def __EN():
-            en_config = {
-                # identifier
-                'name': 'correctionglm',
-
-                # pretrained model
-                'language_model': True,
-                'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-roberta-large'),
-
-                # model config
-                'torch_dtype': None,
-                'use_lora': False,
-                'bf16': False,
-                'ds_config': None,
-                'load_in_8bit': False,
-
-                # model parameters
-                'model_type': 'all',        # model type: all, detection, generate
-                'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
-                'output_dropout_prob': 0.2,        # detection head dropout
-                'loss_ignore_id': -100,
-                'loss_detach': False,
-                'loss_reduce': 'mean',
-
-                # data process parameters
-                'cache_dir': '.cache',
-                'load_cache': True,
-                'streaming': False,
-                'num_proc_trainset': None,
-                'max_train_source_length': 128,
-                'max_eval_source_length': 256,
-                'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
-                'detection_load_way': 'detections',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
-                'detection_results': {
-                    'train': None,
-                    'valid': None,
-                    'test': None,
-                },
-
-                # data related train settings
-                'gradient_accumulation_steps': 20,
-                'train_batch_size': 12,
-                'eval_batch_size': 8,
-                'detection_batch_size': 8,
-
-                # train settings
-                # parameters that are able to be tuned
-                'detection_loss_weight': 10,
-                'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
-                'epoch': 20,
-                'warmup_steps': 100,
-                'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
-                'lr': 3e-6,
-                'lr_scheduler': 'polynomial',
-                'weight_decay': 1e-4,
-
-                # evaluation config
-                'logging_steps': 10,
-                'eval_step': 200,        # steps interval of evaluation, None: 1eval/epoch 
-                'save_step': 200,  
-                'save_strategy': 'epoch',
-                'early_stop': 10,
-                'eval_key': 'eval_ad_accuracy',
-
-                # inference config
-                'pre_split_length_for_infer': False,
-                'max_infer_source_length': None,
-                'detection_only': False,
-                'post_process': [PPM.en_test_py3],       # Please refer postprocess to get functions: 'cn_marker'
-                # 'chinese_marker_substitution': True,
-                'load_config_keys': ['model_type', 'prompt', 'num_labels'],
-                'keep_threshold': None,         # any position which has $KEEP probability > keep_threshold will be set to $KEEP
-                'error_threshold': None,        # any position which has $ERROR probability < error_threshold will never be set to $ERROR
-                'insert_threshold': None,       # any position which has $ERROR probability < insert_threshold will never be set to $INSERT
-                'num_beams': 3,
-                'max_new_tokens': 10,
-            }
-            return en_config
-        
-        def __EN_LORA():
-            lora_en_config = {
-                # identifier
-                'name': 'correctionglm',
-
-                # pretrained model
-                'language_model': True,
-                'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-10b'),
-
-                # model config
-                'torch_dtype': torch.bfloat16,
-                'use_lora': True,
-                'bf16': True,
-                'ds_config': None,
-                'load_in_8bit': False,
-
-                # model parameters
-                'model_type': 'generate',        # model type: all, detection, generate
-                'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
-                'output_dropout_prob': 0.2,        # detection head dropout
-                'loss_ignore_id': -100,
-                'loss_detach': False,
-                'loss_reduce': 'mean',
-
-                # data process parameters
-                'cache_dir': '.cache',
-                'load_cache': True,
-                'streaming': False,
-                'num_proc_trainset': None,
-                'max_train_source_length': 128,
-                'max_eval_source_length': 256,
-                'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
-                'detection_load_way': 'masked_words',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
-                'detection_results': {
-                    'train': 'results_debug/correctionglm-wilocness-infer_train-20240102-1514/train/detection_results.json',
-                    'valid': 'results_debug/correctionglm-wilocness-infer_train-20240102-1514/valid/detection_results.json',
-                    'test': None,
-                },
-
-                # data related train settings
-                'gradient_accumulation_steps': 10,
-                'train_batch_size': 12,
-                'eval_batch_size': 8,
-                'detection_batch_size': 8,
-
-                # train settings
-                # parameters that are able to be tuned
-                'detection_loss_weight': 5,
-                'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
-                'epoch': 10,
-                'warmup_steps': 1000,
-                'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
-                'lr': 1e-5,
-                'lr_scheduler': 'polynomial',
-                'weight_decay': 1e-4,
-
-                # evaluation config
-                'logging_steps': 10,
-                'eval_step': 1000,        # steps interval of evaluation, None: 1eval/epoch 
-                'save_step': 2000,  
-                'save_strategy': 'epoch',
-                'early_stop': 10,
-                'eval_key': 'eval_glm_accuracy',
-
-                # inference config
-                'pre_split_length_for_infer': False,
-                'max_infer_source_length': None,
-                'detection_only': False,
-                'post_process': [PPM.en_test_py3],       # Please refer postprocess to get functions: 'cn_marker'
-                # 'chinese_marker_substitution': True,
-                'load_config_keys': ['model_type', 'prompt', 'num_labels'],
-                'keep_threshold': None,         # any position which has $KEEP probability > keep_threshold will be set to $KEEP
-                'error_threshold': None,        # any position which has $ERROR probability < error_threshold will never be set to $ERROR
-                'insert_threshold': None,       # any position which has $ERROR probability < insert_threshold will never be set to $INSERT
-                'num_beams': 3,
-                'max_new_tokens': 10,
-            }
-            return lora_en_config
-        
-        def __CN_LARGE():
-            large_cn_config = {
-                # identifier
-                'name': 'correctionglm',
-
-                # pretrained model
-                'language_model': True,
-                'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-large-chinese'),
-
-                # model config
-                'torch_dtype': None,
-                'use_lora': False,
-                'bf16': False,
-                'ds_config': None,
-                'load_in_8bit': False,
-
-                # model parameters
-                'model_type': 'all',        # model type: all, detection, generate
-                'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
-                'output_dropout_prob': 0.2,        # detection head dropout
-                'loss_ignore_id': -100,
-                'loss_detach': False,
-                'loss_reduce': 'mean',
-
-                # data process parameters
-                'cache_dir': '.cache',
-                'load_cache': True,
-                'streaming': False,
-                'num_proc_trainset': None,
-                'max_train_source_length': 128,
-                'max_eval_source_length': 256,
-                'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
-                'detection_load_way': 'detections',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
-                'detection_results': {
-                    'train': None,
-                    'valid': None,
-                    'test': None,
-                },
-
-                # data related train settings
-                'gradient_accumulation_steps': 10,
-                'train_batch_size': 12,
-                'eval_batch_size': 8,
-                'detection_batch_size': 8,
-
-                # train settings
-                # parameters that are able to be tuned
-                'detection_loss_weight': 10,
-                'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
-                'epoch': 20,
-                'warmup_steps': 1000,
-                'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
-                'lr': 1e-5,
-                'lr_scheduler': 'polynomial',
-                'weight_decay': 1e-4,
-
-                # evaluation config
-                'logging_steps': 10,
-                'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
-                'save_step': 2000,  
-                'save_strategy': 'epoch',
-                'early_stop': 20,
-                'eval_key': 'eval_ad_accuracy',
-
-                # inference config
-                'pre_split_length_for_infer': False,
-                'max_infer_source_length': None,
-                'detection_only': False,
-                'post_process': [PPM.cn_marker],       # Please refer postprocess to get functions: 'cn_marker'
-                # 'chinese_marker_substitution': True,
-                'load_config_keys': ['model_type', 'prompt', 'num_labels'],
-                'keep_threshold': None,         # any position which has $KEEP probability > keep_threshold will be set to $KEEP
-                'error_threshold': None,        # any position which has $ERROR probability < error_threshold will never be set to $ERROR
-                'insert_threshold': None,       # any position which has $ERROR probability < insert_threshold will never be set to $INSERT
-                'num_beams': 3,
-                'max_new_tokens': 10,
-            }
-            return large_cn_config
-        
-        def __CN():
-            cn_config = {
-                # identifier
-                'name': 'correctionglm',
-
-                # pretrained model
-                'language_model': True,
-                'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-large-chinese'),
-
-                # model config
-                'torch_dtype': None,
-                'use_lora': False,
-                'bf16': False,
-                'ds_config': None,
-                'load_in_8bit': False,
-
-                # model parameters
-                'model_type': 'all',        # model type: all, detection, generate
-                'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
-                'output_dropout_prob': 0.2,        # detection head dropout
-                'loss_ignore_id': -100,
-                'loss_detach': False,
-                'loss_reduce': 'mean',
-
-                # data process parameters
-                'cache_dir': '.cache',
-                'load_cache': True,
-                'streaming': False,
-                'num_proc_trainset': None,
-                'max_train_source_length': 128,
-                'max_eval_source_length': 256,
-                'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
-                'detection_load_way': 'detections',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
-                'detection_results': {
-                    'train': None,
-                    'valid': None,
-                    'test': None,
-                },
-
-                # data related train settings
-                'gradient_accumulation_steps': 10,
-                'train_batch_size': 12,
-                'eval_batch_size': 8,
-                'detection_batch_size': 8,
-
-                # train settings
-                # parameters that are able to be tuned
-                'detection_loss_weight': 10,
-                'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
-                'epoch': 20,
-                'warmup_steps': 100,
-                'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
-                'lr': 1e-5,
-                'lr_scheduler': 'polynomial',
-                'weight_decay': 1e-4,
-
-                # evaluation config
-                'logging_steps': 10,
-                'eval_step': 200,        # steps interval of evaluation, None: 1eval/epoch 
-                'save_step': 200,  
-                'save_strategy': 'epoch',
-                'early_stop': 20,
-                'eval_key': 'eval_ad_accuracy',
-
-                # inference config
-                'pre_split_length_for_infer': False,
-                'max_infer_source_length': None,
-                'detection_only': False,
-                'post_process': [PPM.cn_marker],       # Please refer postprocess to get functions: 'cn_marker'
-                # 'chinese_marker_substitution': True,
-                'load_config_keys': ['model_type', 'prompt', 'num_labels'],
-                'keep_threshold': None,         # any position which has $KEEP probability > keep_threshold will be set to $KEEP
-                'error_threshold': None,        # any position which has $ERROR probability < error_threshold will never be set to $ERROR
-                'insert_threshold': None,       # any position which has $ERROR probability < insert_threshold will never be set to $INSERT
-                'num_beams': 3,
-                'max_new_tokens': 10,
-            }
-            return cn_config
-
-        def __CN_LORA():
-            cn_lora_config = {
-                # identifier
-                'name': 'correctionglm',
-
-                # pretrained model
-                'language_model': True,
-                'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'glm-10b-chinese'),
-
-                # model config
-                'torch_dtype': torch.bfloat16,
-                'use_lora': True,
-                'bf16': True,
-                'ds_config': None,
-                'load_in_8bit': False,
-
-                # model parameters
-                'model_type': 'generate',        # model type: all, detection, generate
-                'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
-                'output_dropout_prob': 0.2,        # detection head dropout
-                'loss_ignore_id': -100,
-                'loss_detach': False,
-                'loss_reduce': 'mean',
-
-                # data process parameters
-                'cache_dir': '.cache',
-                'load_cache': True,
-                'streaming': False,
-                'num_proc_trainset': None,
-                'max_train_source_length': 128,
-                'max_eval_source_length': 256,
-                'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
-                'detection_load_way': 'detections',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
-                'detection_results': {
-                    'train': None,
-                    'valid': None,
-                    'test': None,
-                },
-
-                # data related train settings
-                'gradient_accumulation_steps': 10,
-                'train_batch_size': 12,
-                'eval_batch_size': 8,
-                'detection_batch_size': 8,
-
-                # train settings
-                # parameters that are able to be tuned
-                'detection_loss_weight': 5,
-                'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
-                'epoch': 20,
-                'warmup_steps': 100,
-                'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
-                'lr': 1e-5,
-                'lr_scheduler': 'polynomial',
-                'weight_decay': 1e-4,
-
-                # evaluation config
-                'logging_steps': 10,
-                'eval_step': 200,        # steps interval of evaluation, None: 1eval/epoch 
-                'save_step': 200,  
-                'save_strategy': 'epoch',
-                'early_stop': 20,
-                'eval_key': 'eval_glm_accuracy',
-
-                # inference config
-                'pre_split_length_for_infer': False,
-                'max_infer_source_length': None,
-                'detection_only': False,
-                'post_process': [PPM.cn_marker],       # Please refer postprocess to get functions: 'cn_marker'
-                # 'chinese_marker_substitution': True,
-                'load_config_keys': ['model_type', 'prompt', 'num_labels'],
-                'keep_threshold': None,         # any position which has $KEEP probability > keep_threshold will be set to $KEEP
-                'error_threshold': None,        # any position which has $ERROR probability < error_threshold will never be set to $ERROR
-                'insert_threshold': None,       # any position which has $ERROR probability < insert_threshold will never be set to $INSERT
-                'num_beams': 3,
-                'max_new_tokens': 10,
-            }
-            return cn_lora_config
-
-        if self.preconfig.lora:
-            if self.dataset in ['lang8', 'clang8', 'c4', 'hybrid', 'wilocness', 'fce', 'nucle']:
-                return __EN_LORA()
-            elif self.dataset in ['pretrain', 'mucgec', 'fangzhenggrammar', 'fangzhengspell', 'fcgec']:
-                return __CN_LORA()
-            else:
-                return NotImplementedError()
-        if self.dataset in ['lang8', 'clang8', 'c4']:
-            return __EN_LARGE()
-        elif self.dataset in ['hybrid', 'wilocness', 'fce', 'nucle']:
-            return __EN()
-        elif self.dataset in ['pretrain', 'mucgec', 'fangzhenggrammar', 'fangzhengspell', 'mucgec_dev']:
-            return __CN_LARGE()
-        elif self.dataset in ['fcgec']:
-            return __CN()
+        if os.path.exists(self.preconfig.config):
+            logger.info(f"Successfully loaded config in {self.preconfig.config}.")
+            compute_keys = ['pretrained_model', 'torch_dtype']
+            loaded_config = json.load(open(self.preconfig.config))
+            for key in compute_keys:
+                loaded_config[key] = eval(loaded_config[key])
+            return loaded_config
         else:
-            return NotImplementedError()
+            logger.info(f"Using config defined in config.py.")
+            return default_config
     
     def __Seq2SeqBeta(self, tune):
         Config = {
@@ -1322,7 +921,7 @@ class Config:
             'predict_with_generate': False,
 
             # inference config
-            'pre_split_length_for_infer': 128,
+            'pre_split_length_for_infer': None,
             'load_config_keys': ['source_prefix'],
             'num_beams': 12,
             'max_gen_len': 384,
@@ -1417,7 +1016,7 @@ class Config:
             # gec generation settings
             'en_prompt': "Reply with a corrected version of the input sentence with all grammatical and spelling errors fixed. If there are no errors, reply with a copy of the original sentence.\n\nInput sentence: [TEXT]\nCorrected sentence: ",
             'cn_prompt': "请改正输入语句中的所有语法和拼写错误，输出改正后的语句；如果输入语句没有错误，输出原来的语句。\n\n输入语句：[TEXT]\n改正后的语句：",
-            'pre_split_length_for_infer': False,
+            'pre_split_length_for_infer': None,
             'post_process': [],
 
         }

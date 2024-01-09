@@ -92,6 +92,7 @@ class PostProcess:
         discourse_index = self.results[0]["id"].split('#')[0]
         source_discourse_buff = ""
         target_discourse_buff = ""
+        last_item = None
         cur_item = None
         for item in self.results:
             cur_item = item
@@ -102,9 +103,10 @@ class PostProcess:
             if cur_index == discourse_index:
                 source_discourse_buff += item["src"]
                 target_discourse_buff += line
+                last_item = item
             else:
                 if "tgt" in item:
-                    merged_results.append({"id": discourse_index, "src": source_discourse_buff, "tgt": cur_item["tgt"], "predict": target_discourse_buff})
+                    merged_results.append({"id": discourse_index, "src": source_discourse_buff, "tgt": last_item["tgt"], "predict": target_discourse_buff})
                 else:
                     merged_results.append({"id": discourse_index, "src": source_discourse_buff, "predict": target_discourse_buff})
                 discourse_index = cur_index
@@ -114,7 +116,7 @@ class PostProcess:
                 target_discourse_buff = target_discourse_buff[:-1] + end
         else:
             if "tgt" in item:
-                merged_results.append({"id": discourse_index, "src": source_discourse_buff, "tgt": cur_item["tgt"], "predict": target_discourse_buff})
+                merged_results.append({"id": discourse_index, "src": source_discourse_buff, "tgt": last_item["tgt"], "predict": target_discourse_buff})
             else:
                 merged_results.append({"id": discourse_index, "src": source_discourse_buff, "predict": target_discourse_buff})
         

@@ -117,6 +117,9 @@ class CorrectionGLMTrainer(TrainerBeta):
         self.callbacks = []
         if self.settings.early_stop:
             self.callbacks.append(EarlyStoppingCallback(self.settings.early_stop))
+        
+        # check limitation of config
+        assert self.settings.detection_load_way == 'detections', "Sorry, for now only detecition predictions can be loaded, other modes have BUG. (tokenizer Unconsistency)"
 
         # initialize config for transformers trainer
         self.training_args = TrainingArguments(
@@ -573,9 +576,9 @@ class CorrectionGLMTrainer(TrainerBeta):
             detection_results = json.load(open(self.settings.detection_results[split]))
             # test_dataset is self.dataset['split'], infer train mode: all split will be inferred, infer mode: split=test.
             # check id compatible
-            assert len(detection_results) == len(self.dataset[split]), f"Uncompatible detection results from {self.settings.detection_results['infer']}"
+            assert len(detection_results) == len(self.dataset[split]), f"Uncompatible detection results from {self.settings.detection_results[split]}"
             for i in range(len(detection_results)):
-                assert detection_results[i]["id"] == self.dataset[split][i]["id"], f"Uncompatible detection results from {self.settings.detection_results['infer']}"
+                assert detection_results[i]["id"] == self.dataset[split][i]["id"], f"Uncompatible detection results from {self.settings.detection_results[split]}"
 
             # load detections
             self.test_dataset_transform(split)
@@ -592,10 +595,10 @@ class CorrectionGLMTrainer(TrainerBeta):
                 if self.settings.detection_load_way == 'detections':
                     result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, item['detection_predictions'])
                 elif self.settings.detection_load_way == "masked_text":
-                    # TODO: check, adjust mode to masked_text
+                    # TODO: check, adjust mode to masked_text (BUG)
                     result = self.data_processor.convert_masked_sentence_to_infer_example(item['text'], item['masked_text'], self.settings.max_infer_source_length)
                 elif self.settings.detection_load_way == "masked_words":
-                    # TODO: check, adjust mode to masked_words
+                    # TODO: check, adjust mode to masked_words (BUG)
                     result = self.data_processor.convert_masked_sentence_to_infer_example(item['text'], item['masked_words'], self.settings.max_infer_source_length)
                 else:
                     raise NotImplementedError()
@@ -663,11 +666,11 @@ class CorrectionGLMTrainer(TrainerBeta):
                         masked_text = masked_text.replace('[MASK] ', '[MASK]')
                     else:
                         masked_text = self.tokenizer.decode(masked_ids)
-                    # check if can be recovered
-                    try:
-                        assert self.tokenizer.encode(masked_text) == list(masked_example['input_ids']), (self.tokenizer.encode(masked_text), list(masked_example['input_ids']))
-                    except Exception as e:
-                        logger.info(f"ERROR while checking: {masked_text} NOT EQUAL TO {self.tokenizer.decode(masked_example['input_ids'])}")
+                    # REMOVED: check if can be recovered (BUG)
+                    # try:
+                    #     assert self.tokenizer.encode(masked_text) == list(masked_example['input_ids']), (self.tokenizer.encode(masked_text), list(masked_example['input_ids']))
+                    # except Exception as e:
+                    #     logger.info(f"ERROR while checking: {masked_text} NOT EQUAL TO {self.tokenizer.decode(masked_example['input_ids'])}")
 
                     example_id = item['id']
                     save_items.append({"id": example_id, "masked_text": masked_text, "masked_words": self.tokenizer.convert_ids_to_tokens(masked_ids), "source_tokens": src_tokens, "detections": edit_label_predictions[i]})
@@ -1036,10 +1039,10 @@ class CorrectionGLMTrainer(TrainerBeta):
             config_dict = {}
             for key in self.settings:
                 content = self.settings[key]
-                if type(content) in [str, int, float, bool, list, dict]:
-                    config_dict[key] = content
-                else:
+                if key in ['pretrained_model', 'torch_dtype']:
                     config_dict[key] = str(content)
+                else:
+                    config_dict[key] = content
             config_dict['model'] = self.args.model
             config_dict['dataset'] = self.args.dataset
             config_dict['task_mode'] = self.args.task_mode

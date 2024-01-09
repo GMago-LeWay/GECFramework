@@ -46,8 +46,11 @@ def parse_args():
                         help='model save directory to be loaded in infer task.')
     parser.add_argument('--resume', type=str, default=None,
                         help='model checkpoint to continue training.')
-    parser.add_argument('--lora', action="store_true", default=False,
-                        help='LoRA method, for now only support CorrectionGLM.')
+    # Removed after 240109
+    # parser.add_argument('--lora', action="store_true", default=False,
+    #                     help='LoRA method, for now only support CorrectionGLM.')
+    parser.add_argument('--config', type=str, default='',
+                        help='optional for CorrectionGLM model. load config file.')
     parser.add_argument('--seed', type=int, default=111,
                         help='random seed.')
     parser.add_argument('--data_save_dir', type=str, default=None,
@@ -444,7 +447,7 @@ class ExperimentsOfGECBeta:
         original_save_dir = str(self.args.save_dir)
 
         # keep threshold
-        for th in np.arange(0.2, 0.52, 0.02):
+        for th in np.arange(0.3, 0.46, 0.02):
             th = round(th, 2)
             config.keep_threshold = th
             logger.info(f"KEEP threshold {th} inference:")
