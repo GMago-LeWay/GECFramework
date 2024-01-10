@@ -22,9 +22,9 @@
     "prompt": "",
     "detection_load_way": "detections",
     "detection_results": {
-        "train": "results_detach/correctionglm-clang8-infer_train-20240110-0053/train/detection_results.json",
-        "valid": "results_detach/correctionglm-clang8-infer_train-20240110-0053/valid/detection_results.json",
-        "test": "results_detach/correctionglm-clang8-infer_train-20240110-0053/test/detection_results.json"
+        "train": "results_detach/correctionglm-clang8-infer_train-20240110-0109/train/detection_results.json",
+        "valid": "results_detach/correctionglm-clang8-infer_train-20240110-0109/valid/detection_results.json",
+        "test": "results_detach/correctionglm-clang8-infer_train-20240110-0109/test/detection_results.json"
     },
     "gradient_accumulation_steps": 20,
     "train_batch_size": 12,

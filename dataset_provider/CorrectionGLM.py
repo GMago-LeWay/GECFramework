@@ -72,10 +72,11 @@ class TokenizerBasedTextEditProcessor:
         '''
         Use tokenizer to split sentence into a list of tokens
         '''
+        reserved_length = 12
         if max_sentence_length is None:
             if self.max_sequence_length:
                 if self.task_mode in ['infer_train', 'eval_train']:
-                    max_sentence_length = self.max_sequence_length
+                    max_sentence_length = self.max_sequence_length - reserved_length
                 else:
                     max_sentence_length = self.max_sequence_length // 3
         tokens = self.tokenizer.encode(sentence)
