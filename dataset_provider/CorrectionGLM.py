@@ -41,10 +41,10 @@ class TokenizerBasedTextEditProcessor:
         self.tokenizer = tokenizer
         self.max_sequence_length = max_sequence_length
         self.task_mode = task_mode
-        if self.task_mode in ['infer_train', 'eval_train']:
-            logger.info("You are using infer train mode or eval train mode, split sentence to max_seq_len by default.")
-        else:
-            logger.info("Split sentence to max_seq_len // 3 by default.")
+        # if self.task_mode in ['infer_train', 'eval_train']:
+        #     logger.info("You are using infer train mode or eval train mode, split sentence to max_seq_len by default.")
+        # else:
+        logger.info("while the max_length is not set, sentence split sentence to max_seq_len // 3 by default.")
         self.keep_label = '$KEEP'
         self.insert_label = '$INSERT' # Notice that 'insert' means insertion AFTER the current token
         self.error_label = '$ERROR'
@@ -75,10 +75,10 @@ class TokenizerBasedTextEditProcessor:
         reserved_length = 12
         if max_sentence_length is None:
             if self.max_sequence_length:
-                if self.task_mode in ['infer_train', 'eval_train']:
-                    max_sentence_length = self.max_sequence_length - reserved_length
-                else:
-                    max_sentence_length = self.max_sequence_length // 3
+                # if self.task_mode in ['infer_train', 'eval_train']:
+                #     max_sentence_length = self.max_sequence_length - reserved_length
+                # else:
+                max_sentence_length = self.max_sequence_length // 3
         tokens = self.tokenizer.encode(sentence)
         if max_sentence_length < len(tokens):
             if enable_warning:
@@ -298,6 +298,9 @@ class GLMDataProcessor:
         }
     
     def from_edit_label_to_masked_example(self, edit_labels: List[str], src_tokens: List[int]):
+        if len(edit_labels) != len(src_tokens):
+            assert len(edit_labels) > len(src_tokens)
+            edit_labels = edit_labels[:len(src_tokens)]
         global LAST_DETECTION_ERROR_NUM
         mask_spans = []
         # hard limit: last token is always correct (<eos>)

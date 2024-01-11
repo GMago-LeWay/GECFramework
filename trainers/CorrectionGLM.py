@@ -26,6 +26,7 @@ from transformers import (
     EarlyStoppingCallback,
 )
 from transformers.trainer_utils import get_last_checkpoint
+from utils.checkpoint_select import get_all_best_checkpoint
 
 
 from trainers.base import TrainerBeta
@@ -525,15 +526,7 @@ class CorrectionGLMTrainer(TrainerBeta):
             trainer.save_state()
             self.save(save_dir=self.args.save_dir)
 
-        # # Test
-        # if training_args.do_eval:
-        #     logger.info("*** Evaluate ***")
-
-        #     metrics = trainer.evaluate(eval_dataset=test_dataset)
-        #     metrics["test_samples"] = len(test_dataset)
-
-        #     trainer.log_metrics("test", metrics)
-        #     trainer.save_metrics("test", metrics)
+        get_all_best_checkpoint(self.args.save_dir)        
         return metrics
 
     def do_test(self):
