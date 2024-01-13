@@ -47,7 +47,7 @@
     "save_step": 2000,
     "save_strategy": "epoch",
     "early_stop": 20,
-    "eval_key": "eval_ad_accuracy",
+    "eval_key": "eval_general_accuracy",
     "pre_split_length_for_infer": null,
     "max_infer_source_length": null,
     "detection_only": false,

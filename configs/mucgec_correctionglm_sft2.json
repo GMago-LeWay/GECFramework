@@ -22,9 +22,9 @@
     "prompt": "",
     "detection_load_way": "detections",
     "detection_results": {
-        "train": "",
-        "valid": "",
-        "test": ""
+        "train": "results_main/correctionglm-mucgec-train_eval_infer-20231219-1057/train/detection_results.json",
+        "valid": "results_main/correctionglm-mucgec-train_eval_infer-20231219-1057/valid/detection_results.json",
+        "test": null
     },
     "gradient_accumulation_steps": 8,
     "train_batch_size": 12,
@@ -46,8 +46,8 @@
     "eval_step": 2000,
     "save_step": 2000,
     "save_strategy": "epoch",
-    "early_stop": 20,
-    "eval_key": "eval_ad_accuracy",
+    "early_stop": 10,
+    "eval_key": "eval_glm_accuracy",
     "pre_split_length_for_infer": null,
     "max_infer_source_length": null,
     "detection_only": false,

@@ -22,9 +22,9 @@
     "prompt": "",
     "detection_load_way": "detections",
     "detection_results": {
-        "train": "",
-        "valid": "",
-        "test": ""
+        "train": "results_detach/correctionglm-fcgec-train_eval_infer-20240112-1327/train/detection_results.json",
+        "valid": "results_detach/correctionglm-fcgec-train_eval_infer-20240112-1327/valid/detection_results.json",
+        "test": "results_detach/correctionglm-fcgec-train_eval_infer-20240112-1327/test/detection_results.json"
     },
     "gradient_accumulation_steps": 10,
     "train_batch_size": 12,

@@ -938,62 +938,75 @@ class Config:
             # pretrained model
             'language_model': True,
             'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'bart-large-chinese'),
-            'use_lora': False,
-            'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
-
+            
             # model config
             'torch_dtype': None,
-            'load_in_8bit': False,
-            'loss_ignore_id': -100,
+            'use_lora': False,
             'bf16': False,
             'ds_config': None,
+            'load_in_8bit': False,
 
-            # fixed parameters
+            # model parameters
             'model_type': 'all',        # model type: all, detection, generate
             'num_labels': 3,    # detection label num, 3 means mode ['$KEEP', '$ERROR', '$INSERT'], 2 means mode ['$KEEP', '$ERROR']
             'output_dropout_prob': 0.2,        # detection head dropout
-
-            # parameters that are able to be tuned
-            'source_prefix': '',
-            'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
-            'detection_loss_weight': 10,
-            'gradient_accumulation_steps': 8,
-            'lr': 1e-5,
-            'weight_decay': 1e-4,
-            'epoch': 5,
-            'warmup_steps': 4000,     
-            'lr_scheduler': 'polynomial',
-            'save_strategy': 'epoch',
-            'alpha': [1,2,2],  # [1,2,2], or [1,2]
+            'loss_ignore_id': -100,
+            'loss_detach': False,
+            'loss_reduce': 'mean',
 
             # data process parameters
             'cache_dir': '.cache',
             'load_cache': True,
+            'streaming': False,
+            'num_proc_trainset': None,
+            'max_train_source_length': 128,
+            'max_eval_source_length': 256,
+            'source_prefix': '',
+            'prompt': '',    # '请修正以下语句中的语法错误，并在后面给出正确的语句：',
+            'detection_load_way': 'detections',    # detections or masked_text or masked_words. When tokenizer changed, masked_words mode is recommended.
             'detection_results': {
                 'train': None,
                 'valid': None,
                 'test': None,
             },
 
-            'logging_steps': 10,
-            'max_train_source_length': 128,
-            'max_eval_source_length': 256,
+            # data related train settings
+            'gradient_accumulation_steps': 20,
             'train_batch_size': 12,
             'eval_batch_size': 8,
             'detection_batch_size': 8,
 
+            # train settings
+            # parameters that are able to be tuned
+            'detection_loss_weight': 10,
+            'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
+            'epoch': 20,
+            'warmup_steps': 1000,
+            'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
+            'lr': 1e-5,
+            'lr_scheduler': 'polynomial',
+            'weight_decay': 1e-4,
+
             # evaluation config
-            'eval_step': 4000,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 4000,  
-            'eval_key': 'eval_general_accuracy',
+            'logging_steps': 10,
+            'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 2000,  
+            'save_strategy': 'epoch',
+            'early_stop': 10,
+            'eval_key': 'eval_ad_accuracy',
 
             # inference config
-            'load_config_keys': ['model_type', 'prompt', 'num_labels'],
+            'pre_split_length_for_infer': None,
+            'max_infer_source_length': None,
             'detection_only': False,
-            'keep_threshold': None,
+            'post_process': [PPM.en_test_py3],       # Please refer postprocess to get functions: 'cn_marker'
+            # 'chinese_marker_substitution': True,
+            'load_config_keys': ['model_type', 'prompt', 'num_labels'],
+            'keep_threshold': None,         # any position which has $KEEP probability > keep_threshold will be set to $KEEP
+            'error_threshold': None,        # any position which has $ERROR probability < error_threshold will never be set to $ERROR
+            'insert_threshold': None,       # any position which has $ERROR probability < insert_threshold will never be set to $INSERT
             'num_beams': 12,
-            'max_new_tokens': 10,
-            'post_process': [],
+            'max_new_tokens': 50,
 
         }
 
