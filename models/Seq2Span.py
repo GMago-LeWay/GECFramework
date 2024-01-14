@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 LOSS_CACHE = []
 DETECTION_LOSS_CACHE = []
 WEIGHTED_DETECTION_LOSS_CACHE = []
-GLM_LOSS_CACHE = []
+LM_LOSS_CACHE = []
 
 class Seq2Span(BartPretrainedModel):
     def __init__(self, args, settings):
@@ -49,13 +49,12 @@ class Seq2Span(BartPretrainedModel):
         self.n_gpu = len(self.args.devices.split(','))
         self.loss_detach = settings.loss_detach
         # Load BART Model
-        self.pool_token = config.pool_token
         self.bart = BartForConditionalGeneration.from_pretrained(
             settings.pretrained_model, 
             # trust_remote_code=True,
             torch_dtype=settings.torch_dtype,
         )
-        # GLM Loss
+        # LM Loss
         self.lm_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction='sum')
 
         if self.settings.model_type in ['all', 'detection']:
@@ -73,23 +72,19 @@ class Seq2Span(BartPretrainedModel):
 
     def forward(self,
                 input_ids=None,
-                attention_mask=None,
-                encoder_outputs=None,
                 decoder_input_ids=None,
-                decoder_attention_mask=None,
                 target_ids=None,
                 detection_labels=None,
                 **kwargs):
-        global DETECTION_LOSS_CACHE, WEIGHTED_DETECTION_LOSS_CACHE, GLM_LOSS_CACHE, LOSS_CACHE
+        global DETECTION_LOSS_CACHE, WEIGHTED_DETECTION_LOSS_CACHE, LM_LOSS_CACHE, LOSS_CACHE
         if self.training:
             self.steps += 1
-        # glm model prediction
+        # BART model prediction
         model_out = self.bart(
             input_ids=input_ids,
-            attention_mask=attention_mask,
-            encoder_outputs=encoder_outputs,
+            attention_mask=None,
             decoder_input_ids=decoder_input_ids,
-            decoder_attention_mask=decoder_attention_mask,
+            decoder_attention_mask=None,
         )
         outputs, lm_logits = model_out.last_hidden_states, model_out.logits
         lm_loss = self.lm_loss(lm_logits.view(-1, lm_logits.shape[-1]), target_ids.view(-1))
@@ -101,10 +96,10 @@ class Seq2Span(BartPretrainedModel):
         if self.settings.model_type == 'generate':
             loss = lm_loss
             if self.print and self.training:
-                GLM_LOSS_CACHE.append(lm_loss.item())
+                LM_LOSS_CACHE.append(lm_loss.item())
                 if self.steps % self.print_interval == 0:
-                    wandb.log({"glm_loss": sum(GLM_LOSS_CACHE)/len(GLM_LOSS_CACHE)})
-                    GLM_LOSS_CACHE = []
+                    wandb.log({"lm_loss": sum(LM_LOSS_CACHE)/len(LM_LOSS_CACHE)})
+                    LM_LOSS_CACHE = []
             return ModelOutput(
                 loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
                 logits={'glm': lm_logits},
@@ -140,19 +135,19 @@ class Seq2Span(BartPretrainedModel):
                 # print loss
                 if self.print and self.training:
                     DETECTION_LOSS_CACHE.append(detection_loss.item())
-                    GLM_LOSS_CACHE.append(lm_loss.item())
+                    LM_LOSS_CACHE.append(lm_loss.item())
                     WEIGHTED_DETECTION_LOSS_CACHE.append(self.settings.detection_loss_weight * detection_loss.item())
                     LOSS_CACHE.append(loss.item())
                     if self.steps % self.print_interval == 0:
                         wandb.log(
                             {
                                 "detection_loss": sum(DETECTION_LOSS_CACHE)/len(DETECTION_LOSS_CACHE), 
-                                "glm_loss": sum(GLM_LOSS_CACHE)/len(GLM_LOSS_CACHE), 
+                                "lm_loss": sum(LM_LOSS_CACHE)/len(LM_LOSS_CACHE), 
                                 "weighted_detection_loss": sum(WEIGHTED_DETECTION_LOSS_CACHE)/len(WEIGHTED_DETECTION_LOSS_CACHE), 
                                 "total_loss": sum(LOSS_CACHE)/len(LOSS_CACHE)
                             }
                         )
-                        DETECTION_LOSS_CACHE, GLM_LOSS_CACHE, WEIGHTED_DETECTION_LOSS_CACHE, LOSS_CACHE = [], [], [], []
+                        DETECTION_LOSS_CACHE, LM_LOSS_CACHE, WEIGHTED_DETECTION_LOSS_CACHE, LOSS_CACHE = [], [], [], []
                 # return loss and logits
                 if self.training and (torch.any(torch.isnan(detection_loss)) or torch.any(torch.isnan(lm_loss))):
                     logger.info("Warning: Nan Value in loss.")
@@ -160,7 +155,7 @@ class Seq2Span(BartPretrainedModel):
                     loss=loss.unsqueeze(0) if self.n_gpu > 1 else loss,
                     logits={'glm': lm_logits, 'detection': logits},
                     # weighted_detection_loss = (self.settings.detection_loss_weight * detection_loss).unsqueeze(0) if self.n_gpu > 1 else loss,
-                    # glm_loss = lm_loss.unsqueeze(0) if self.n_gpu > 1 else loss,
+                    # lm_loss = lm_loss.unsqueeze(0) if self.n_gpu > 1 else loss,
                 )
 
 

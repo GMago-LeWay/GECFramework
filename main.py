@@ -470,7 +470,7 @@ class ExperimentsOfGECBeta:
         #         self.run_infer(config)
 
         # keep-edit threshold
-        for th in np.arange(0.34, 0.42, 0.02):
+        for th in np.arange(0.34, 0.46, 0.02):
             th = round(th, 2)
             config.keep_threshold = th
             result_f, result_p, result_r = {}, {}, {}

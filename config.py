@@ -981,7 +981,7 @@ class Config:
             'detection_loss_weight': 10,
             'alpha': [1, 2, 2],  # [1,2,2], or [1,2]
             'epoch': 20,
-            'warmup_steps': 1000,
+            'warmup_steps': 100,
             'max_steps': 2000000,        # 1532452 steps/epoch for C4 (120examples/step)
             'lr': 1e-5,
             'lr_scheduler': 'polynomial',
@@ -989,8 +989,8 @@ class Config:
 
             # evaluation config
             'logging_steps': 10,
-            'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 2000,  
+            'eval_step': 200,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 200,  
             'save_strategy': 'epoch',
             'early_stop': 10,
             'eval_key': 'eval_ad_accuracy',
@@ -999,14 +999,14 @@ class Config:
             'pre_split_length_for_infer': None,
             'max_infer_source_length': None,
             'detection_only': False,
-            'post_process': [PPM.en_test_py3],       # Please refer postprocess to get functions: 'cn_marker'
+            'post_process': [PPM.cn_marker],       # Please refer postprocess to get functions: 'cn_marker'
             # 'chinese_marker_substitution': True,
             'load_config_keys': ['model_type', 'prompt', 'num_labels'],
             'keep_threshold': None,         # any position which has $KEEP probability > keep_threshold will be set to $KEEP
             'error_threshold': None,        # any position which has $ERROR probability < error_threshold will never be set to $ERROR
             'insert_threshold': None,       # any position which has $ERROR probability < insert_threshold will never be set to $INSERT
             'num_beams': 12,
-            'max_new_tokens': 50,
+            'max_new_tokens': 10,
 
         }
 

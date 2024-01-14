@@ -213,8 +213,24 @@ class GLMDataProcessor:
     def __init__(self, tokenizer, args, config) -> None:
         self.tokenizer = tokenizer
         self.model_config = AutoConfig.from_pretrained(config.pretrained_model, trust_remote_code=True)
-        self.max_length = self.model_config.max_sequence_length
+        if hasattr(self.model_config, "max_sequence_length"):
+            self.max_length = self.model_config.max_sequence_length
+        else:
+            self.max_length = self.model_config.max_position_embeddings
         # .sop_token/.eop_token/.sop_token_id/.eop_token_id
+        # if tokenizer has sop,eop than assign it, else set it to bos,eos
+        if hasattr(self.tokenizer, "sop_token"):
+            self.sop_token = tokenizer.sop_token
+            self.sop_token_id = tokenizer.sop_token_id
+        else:
+            self.sop_token = tokenizer.bos_token
+            self.sop_token_id = tokenizer.bos_token_id
+        if hasattr(self.tokenizer, "eop_token"):
+            self.eop_token = tokenizer.eop_token
+            self.eop_token_id = tokenizer.eop_token_id
+        else:
+            self.eop_token = tokenizer.eos_token
+            self.eop_token_id = tokenizer.eos_token_id
         assert config.num_labels in [2, 3]
         if config.num_labels == 2:
             self.without_insert = True
@@ -247,7 +263,7 @@ class GLMDataProcessor:
         # target_tokens: input end ; targets: output end
         target_tokens, target_position_ids, target_block_position_ids, targets = [], [], [], []
         for _, src_start, src_end, tgt_start, tgt_end in edits:
-            target_tokens.append([self.tokenizer.sop_token_id])
+            target_tokens.append([self.sop_token_id])
             if tgt_start == tgt_end: # DELETE operation position, reserved position id
                 target_position_ids.append([position_ids[tgt_start]-1])
             else:
@@ -257,7 +273,7 @@ class GLMDataProcessor:
                 target_position_id = position_ids[tgt_start: tgt_end]
                 target_position_ids.append(target_position_id)
                 target_position_ids.append([target_position_id[0]])
-            targets.append([self.tokenizer.eop_token_id])
+            targets.append([self.eop_token_id])
 
             target_block_position_ids.append(np.arange(1, tgt_end - tgt_start + 2, dtype=int))
 
@@ -375,7 +391,7 @@ class GLMDataProcessor:
         source_length = masked_example['source_length']
 
         if mask_tokens_position:
-            source_tokens = np.concatenate((source_tokens, [self.tokenizer.sop_token_id]), dtype=int)
+            source_tokens = np.concatenate((source_tokens, [self.sop_token_id]), dtype=int)
             # loss_masks = np.ones(len(tokens), dtype=np.long)
             # loss_masks[:source_length] = 0
             source_position_ids = np.concatenate((source_position_ids, [[mask_tokens_position[0]], [1]]), axis=1)
@@ -456,8 +472,8 @@ class GLMDataProcessor:
             # check
             assert src_end-src_start==1 and masked_tokens[src_start] == self.tokenizer.mask_token_id, "MASK Position uncompatible to edits, please check if all true edit labels are included in examples."
             # add target
-            target_tokens.append([self.tokenizer.sop_token_id] + tgt_tokens[tgt_start:tgt_end])
-            targets.append(tgt_tokens[tgt_start:tgt_end] + [self.tokenizer.eop_token_id])
+            target_tokens.append([self.sop_token_id] + tgt_tokens[tgt_start:tgt_end])
+            targets.append(tgt_tokens[tgt_start:tgt_end] + [self.eop_token_id])
             target_position_ids.append([src_start]*(1 + tgt_end - tgt_start))
             target_block_position_ids.append(np.arange(1, tgt_end - tgt_start + 2, dtype=int))
         
@@ -687,7 +703,7 @@ class GLMDataProcessor:
 
         # if theres a mask, add a <sop> token
         if mask_tokens_position:
-            source_tokens = np.concatenate((source_tokens, [self.tokenizer.sop_token_id]), dtype=int)
+            source_tokens = np.concatenate((source_tokens, [self.sop_token_id]), dtype=int)
             # loss_masks = np.ones(len(tokens), dtype=np.long)
             # loss_masks[:source_length] = 0
             source_position_ids = np.concatenate((source_position_ids, [[mask_tokens_position[0]], [1]]), axis=1, dtype=int)

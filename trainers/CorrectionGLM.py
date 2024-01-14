@@ -318,6 +318,18 @@ class CorrectionGLMTrainer(TrainerBeta):
                 detection_results = json.load(open(self.settings.detection_results['train']))
                 assert len(self.dataset['train']) == len(detection_results), f"Using uncompatible detection results for current training set. {len(self.dataset['train'])}, {len(detection_results)}"
                 logger.info(f"Loaded previous detection results from {self.settings.detection_results['train']}")
+                ## check if source tokens is matched 
+                # check_tokenizer = AutoTokenizer.from_pretrained('../models/glm-roberta-large', trust_remote_code=True)
+                # if check_tokenizer:
+                #     logger.info(f"Check if source text is matched between dataset and loaded detection results.")
+                #     for item, detection_res in tqdm(zip(self.dataset['train'], detection_results), desc="Checking:"):
+                #         detection_src_tokens = detection_res["source_tokens"][1:-1]
+                #         tokenized_src_tokens = self.tokenizer.encode(item["text"])[1:-1][:len(detection_src_tokens)]
+                #         detection_src_text = check_tokenizer.decode(detection_src_tokens)
+                #         tokenized_src_text = self.tokenizer.decode(tokenized_src_tokens)
+                #         assert detection_src_text == tokenized_src_text, f"Detection input_text: {detection_src_text}, Source text: {tokenized_src_text}" 
+                        
+
                 self.dataset['train'] = self.dataset['train'].add_column('check_id', [item['id'] for item in detection_results])
                 if self.settings.detection_load_way == "masked_text":
                     self.dataset['train'] = self.dataset['train'].add_column('masked_text', [item['masked_text'] for item in detection_results])

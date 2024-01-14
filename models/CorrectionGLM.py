@@ -85,7 +85,7 @@ def GLMForGrammaticalCorrection(args, settings):
             model = get_peft_model(model, peft_config)
         else:
             logger.info("loading peft model of glm for GEC from checkpoint...")
-            model = PeftModel.from_pretrained(model, args.load, torch_dtype=settings.torch_dtype)
+            model = PeftModel.from_pretrained(model, args.load, torch_dtype=settings.torch_dtype, is_trainable=True)
             logger.info("loaded peft model successfully.")
         model.print_trainable_parameters()
     return model
