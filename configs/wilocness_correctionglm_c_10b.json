@@ -22,9 +22,9 @@
     "prompt": "",
     "detection_load_way": "detections",
     "detection_results": {
-        "train": "",
-        "valid": "",
-        "test": ""
+        "train": "results_detach/correctionglm-wilocness-infer_train-20240112-1416/train/detection_results.json",
+        "valid": "results_detach/correctionglm-wilocness-infer_train-20240112-1416/valid/detection_results.json",
+        "test": "results_detach/correctionglm-wilocness-infer_train-20240112-1416/test/detection_results.json"
     },
     "gradient_accumulation_steps": 10,
     "train_batch_size": 12,
@@ -37,14 +37,14 @@
         2
     ],
     "epoch": 5,
-    "warmup_steps": 200,
+    "warmup_steps": 100,
     "max_steps": 2000000,
-    "lr": 2e-05,
+    "lr": 1e-04,
     "lr_scheduler": "polynomial",
     "weight_decay": 0.0001,
     "logging_steps": 10,
-    "eval_step": 200,
-    "save_step": 200,
+    "eval_step": 100,
+    "save_step": 100,
     "save_strategy": "epoch",
     "early_stop": 10,
     "eval_key": "eval_loss",
