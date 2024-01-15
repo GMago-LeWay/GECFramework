@@ -86,7 +86,7 @@ class Seq2Span(BartPretrainedModel):
             decoder_input_ids=decoder_input_ids,
             decoder_attention_mask=None,
         )
-        outputs, lm_logits = model_out.last_hidden_states, model_out.logits
+        outputs, lm_logits = model_out.encoder_last_hidden_state, model_out.logits
         lm_loss = self.lm_loss(lm_logits.view(-1, lm_logits.shape[-1]), target_ids.view(-1))
         # in older version CrossEntropy with reduce='mean' is applied , but when no error sentences occurred, loss will be nan (models before 23/12/15)
         if self.settings.loss_reduce == 'mean':

@@ -1015,14 +1015,16 @@ class Config:
             logger.info(f"Successfully loaded config in {self.preconfig.config}.")
             compute_keys = ['pretrained_model', 'torch_dtype']
             loaded_config = json.load(open(self.preconfig.config))
-            for key in compute_keys:
-                loaded_config[key] = eval(loaded_config[key])
 
             # sustitute glm model
             loaded_config['name'] = 'seq2span'
             plm = loaded_config['pretrained_model']
             plm = plm.replace('glm-large-chinese', 'bart-large-chinese')
             plm = plm.replace('glm-roberta-large', 'bart-large')
+            loaded_config['pretrained_model'] = plm
+
+            for key in compute_keys:
+                loaded_config[key] = eval(loaded_config[key])
 
             return loaded_config
         else:

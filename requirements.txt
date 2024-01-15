@@ -37,11 +37,15 @@ peft
 # OpenAI need...
 openai==0.27.8
 
+# ChERRANT need...
+nltk
+ltp
+pypinyin
+Levenshtein
+
 # others
 # xpinyin
-# pypinyin
 # synonyms
-# Levenshtein
 # allennlp
 # overrides
 # chardet

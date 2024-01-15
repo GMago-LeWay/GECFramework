@@ -122,7 +122,7 @@ class Seq2SpanTrainer(TrainerBeta):
             self.callbacks.append(EarlyStoppingCallback(self.settings.early_stop))
         
         # check limitation of config
-        assert self.settings.lora == False, "Sorry, Seq2Span model does not support LoRA method now."
+        assert self.settings.use_lora == False, "Sorry, Seq2Span model does not support LoRA method now."
         assert self.settings.detection_load_way == 'detections', "Sorry, for now only detecition predictions can be loaded, other modes have BUG. (tokenizer Unconsistency)"
 
         # initialize config for transformers trainer
