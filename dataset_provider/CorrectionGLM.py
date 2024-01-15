@@ -315,8 +315,11 @@ class GLMDataProcessor:
     
     def from_edit_label_to_masked_example(self, edit_labels: List[str], src_tokens: List[int]):
         if len(edit_labels) != len(src_tokens):
-            assert len(edit_labels) > len(src_tokens)
-            edit_labels = edit_labels[:len(src_tokens)]
+            # assert len(edit_labels) > len(src_tokens), f"Unmatched predictions {len(edit_labels)} and source tokens {len(src_tokens)}: " + self.tokenizer.decode(src_tokens)
+            if len(edit_labels) > len(src_tokens):
+                edit_labels = edit_labels[:len(src_tokens)]
+            else:
+                edit_labels += [self.keep_label] * (len(src_tokens) - len(edit_labels))
         global LAST_DETECTION_ERROR_NUM
         mask_spans = []
         # hard limit: last token is always correct (<eos>)
