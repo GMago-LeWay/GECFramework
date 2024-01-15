@@ -122,6 +122,7 @@ class Seq2SpanTrainer(TrainerBeta):
             self.callbacks.append(EarlyStoppingCallback(self.settings.early_stop))
         
         # check limitation of config
+        assert self.settings.lora == False, "Sorry, Seq2Span model does not support LoRA method now."
         assert self.settings.detection_load_way == 'detections', "Sorry, for now only detecition predictions can be loaded, other modes have BUG. (tokenizer Unconsistency)"
 
         # initialize config for transformers trainer
@@ -537,23 +538,23 @@ class Seq2SpanTrainer(TrainerBeta):
         """
         raise NotImplementedError()
     
-    def construct_inference_model(self):
-        logger.info("Start to construct generation model for inference:")
-        if self.settings.use_lora:
-            logger.info("Peft model will be merged and saved, and reload as seq2seq model.")
-            self.model = self.model.merge_and_unload()
-            model_file = os.path.join(self.args.load, 'merged_model.bin')
-            torch.save(self.model.state_dict(), model_file)
-            del self.model
-            self.model = AutoModelForSeq2SeqLM.from_pretrained(self.settings.pretrained_model, trust_remote_code=True, torch_dtype=self.settings.torch_dtype)
-            match_information = self.model.load_state_dict(torch.load(model_file), strict=False)
-            logger.info(f"load checkpoint from {model_file}, with {match_information}")
-        else:
-            del self.model
-            model_file = os.path.join(self.args.load, 'pytorch_model.bin')
-            self.model = AutoModelForSeq2SeqLM.from_pretrained(self.settings.pretrained_model, trust_remote_code=True, torch_dtype=self.settings.torch_dtype)
-            match_information = self.model.load_state_dict(torch.load(model_file), strict=False)
-            logger.info(f"load checkpoint from {model_file}, with {match_information}")
+    # def construct_inference_model(self):
+    #     logger.info("Start to construct generation model for inference:")
+    #     if self.settings.use_lora:
+    #         logger.info("Peft model will be merged and saved, and reload as seq2seq model.")
+    #         self.model = self.model.merge_and_unload()
+    #         model_file = os.path.join(self.args.load, 'merged_model.bin')
+    #         torch.save(self.model.state_dict(), model_file)
+    #         del self.model
+    #         self.model = AutoModelForSeq2SeqLM.from_pretrained(self.settings.pretrained_model, trust_remote_code=True, torch_dtype=self.settings.torch_dtype)
+    #         match_information = self.model.load_state_dict(torch.load(model_file), strict=False)
+    #         logger.info(f"load checkpoint from {model_file}, with {match_information}")
+    #     else:
+    #         del self.model
+    #         model_file = os.path.join(self.args.load, 'pytorch_model.bin')
+    #         self.model = AutoModelForSeq2SeqLM.from_pretrained(self.settings.pretrained_model, trust_remote_code=True, torch_dtype=self.settings.torch_dtype)
+    #         match_information = self.model.load_state_dict(torch.load(model_file), strict=False)
+    #         logger.info(f"load checkpoint from {model_file}, with {match_information}")
 
     def infer_on_dataset(self, split):
 
@@ -688,9 +689,11 @@ class Seq2SpanTrainer(TrainerBeta):
         
         logger.info("Using Detection results to generate dataset for mask generation:")
         logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.load}")
-        self.construct_inference_model()
-        self.model.to(self.args.device)
-        self.model.eval()
+        
+        # Use bart model to generate
+        # self.construct_inference_model()
+        self.model.bart.to(self.args.device)
+        self.model.bart.eval()
 
         # generation settings 
         max_gen_len = self.settings.max_new_tokens
@@ -714,20 +717,15 @@ class Seq2SpanTrainer(TrainerBeta):
                     mask_positions.append(idx)
             # generate until all mask is generated
             # print(type(test_data['input_ids']))
-            while (test_data['input_ids'] == self.tokenizer.mask_token_id).sum() != (test_data['input_ids'] == self.tokenizer.eop_token_id).sum():
+            known_eop_token_num = (test_data['input_ids'] == self.tokenizer.eop_token_id).sum()
+            while (test_data['input_ids'] == self.tokenizer.mask_token_id).sum() != (test_data['input_ids'] == self.tokenizer.eop_token_id).sum() - known_eop_token_num:
                 input_ids_length = len(test_data['input_ids'])
-                input_ids = torch.LongTensor(test_data['input_ids']).to(self.args.device).unsqueeze(0)
-                current_len = len(test_data['input_ids']) 
-                pad_position_ids = list(test_data['position_ids'][0]) + [test_data['position_ids'][0][-1]]*max_gen_len
-                pad_block_ids = list(test_data['position_ids'][1]) + list(range(test_data['position_ids'][1][-1]+1, test_data['position_ids'][1][-1]+max_gen_len+1))
-                position_ids = torch.stack([torch.LongTensor(pad_position_ids), torch.LongTensor(pad_block_ids)]).to(self.args.device).unsqueeze(0)
-                attention_mask = np.tril(np.ones((current_len+max_gen_len, current_len+max_gen_len), dtype=int))
-                attention_mask[:test_data['prefix_length'], :test_data['prefix_length']] = 1
-                attention_mask[test_data['prefix_length']:test_data['source_length'], :test_data['source_length']] = 1
-                attention_mask = torch.LongTensor(attention_mask).to(self.args.device).unsqueeze(0).unsqueeze(0)
+                input_ids = torch.LongTensor(test_data['input_ids'][:test_data['source_length']]).to(self.args.device).unsqueeze(0)
+                decoder_input_ids = torch.LongTensor(test_data['input_ids'][test_data['source_length']:]).to(self.args.device).unsqueeze(0)
                 try:
                     outputs = self.model.generate(
-                        input_ids=input_ids, position_ids=position_ids, generation_attention_mask=attention_mask,
+                        input_ids=input_ids,
+                        decoder_input_ids=decoder_input_ids,
                         max_new_tokens=max_gen_len, 
                         eos_token_id=self.tokenizer.eop_token_id,
                         pad_token_id=self.tokenizer.eos_token_id,
@@ -738,20 +736,14 @@ class Seq2SpanTrainer(TrainerBeta):
                     print(mask_positions)
                     print(self.tokenizer.decode(input_ids[0].tolist()))
                     print(input_ids.shape, input_ids)
-                    print(position_ids.shape, position_ids)
                     exit()
                 new_input_ids = list(test_data['input_ids']) + outputs[0].tolist()[input_ids_length:]
                 if new_input_ids[-1] != self.tokenizer.eop_token_id:
                     new_input_ids.append(self.tokenizer.eop_token_id)
                 new_input_len = len(new_input_ids)
-                new_position_ids = pad_position_ids[:new_input_len]
-                new_block_ids = pad_block_ids[:new_input_len]
                 if new_input_ids.count(self.tokenizer.mask_token_id) != new_input_ids.count(self.tokenizer.eop_token_id):
                     new_input_ids.append(self.tokenizer.sop_token_id)
-                    new_position_ids.append(mask_positions[new_input_ids.count(self.tokenizer.eop_token_id)])
-                    new_block_ids.append(1)
                 test_data['input_ids'] = np.array(new_input_ids, dtype=int)
-                test_data['position_ids'] = np.array([new_position_ids, new_block_ids], dtype=int)
 
             # end generation
             # mask position replace
@@ -805,227 +797,6 @@ class Seq2SpanTrainer(TrainerBeta):
         test_infer_res = self.infer_on_dataset('test')
         return test_infer_res   
 
-    
-    def eval_on_dataset(self, split):
-        """
-        self.test_dataset is set by dataset['spilt'] for evaluation in this function.
-        """
-        # save directory
-        save_dir = os.path.join(self.args.save_dir, split)
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        
-        # dataset and model prepare
-        self.test_dataset_transform(split)
-        test_data_loader = DataLoader(self.test_dataset, batch_size=self.settings.detection_batch_size, collate_fn=self.data_collator)
-        edit_label_probs = []
-        edit_label_predictions = []
-        # detection
-        logger.info("Error Detection:")
-        keep_label_id = self.data_processor.edit_label_map['$KEEP']
-        error_label_id = self.data_processor.edit_label_map['$ERROR']
-        insert_label_id = self.data_processor.edit_label_map['$INSERT']
-        for test_data in tqdm(test_data_loader):
-            test_data.to(self.args.device)
-            detection_logits = self.model(**test_data).logits['detection']
-            detection_probs = F.softmax(detection_logits, -1)
-            detection_probs_copy = detection_probs.tolist()
-            edit_label_probs.extend(detection_probs_copy)
-            if self.settings.keep_threshold:
-                keep_mask = (detection_probs[:, :, keep_label_id] > self.settings.keep_threshold)*1.
-                detection_probs[:, :, keep_label_id] = keep_mask
-            if self.settings.error_threshold:
-                non_error_mask = (detection_probs[:, :, error_label_id] < self.settings.error_threshold)*1.
-                detection_probs[:, :, error_label_id] -= non_error_mask
-            if self.settings.num_labels >= 3 and self.settings.insert_threshold:
-                non_insert_mask = (detection_probs[:, :, insert_label_id] < self.settings.insert_threshold)*1.
-                detection_probs[:, :, insert_label_id] -= non_insert_mask
-            detection_predictions = detection_probs.argmax(-1).tolist()
-            prefix_length = test_data['prefix_length'].tolist()
-            prefix_prompt_length = test_data['prefix_prompt_length'].tolist()
-            batch_size = len(prefix_length)
-            edit_label_predictions.extend([detection_predictions[i][prefix_prompt_length[i]:prefix_length[i]] for i in range(batch_size)])
-        self.test_dataset = self.test_dataset.add_column('detection_predictions', edit_label_predictions)
-
-        # In two situations, the mode will be set to detection only:
-        # 1. model is only detection model
-        if self.settings.model_type == 'detection':
-            logger.info("Warning: Because the detection model mode is chosen, The evaluation will be done under detection-only mode")
-            self.settings.detection_only = True
-        # 2. in eval_train mode, CorrectionGLM will only output detection in current settings. If needed, this limit can be canceled.
-        if self.args.task_mode == 'eval_train':
-            logger.info("Warning: In current settings, The evaluation of train and valid set will be done under detection-only mode")
-            self.settings.detection_only = True
-
-        if self.settings.detection_only:
-            logger.info("Attention: Detection-only mode. Saving Detections... (if masked text is required, please use eval mode.)")
-            save_items = []
-            for i, item in enumerate(self.test_dataset):
-                src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
-                example_id = item['id']
-                save_items.append({"id": example_id, "source_tokens": src_tokens, "detections": edit_label_predictions[i]})
-            json.dump(save_items, open(os.path.join(save_dir, 'detection_results.json'), 'w'), indent=4, ensure_ascii=False)
-            return []
-        
-        logger.info("Using Detection results to generate dataset for mask generation:")
-        logger.info(f"Change the model to GLMforConditionalGeneration, load GLM model by {self.args.load}")
-        self.construct_inference_model()
-        self.model.to(self.args.device)
-        self.model.eval()
-
-        ## prepare dataset for generation
-        test_dataset_for_generation = []
-        reserved_columns = ['id', 'text', 'label']
-        # self.valid_dataset = self.test_dataset
-        for i, item in tqdm(enumerate(self.test_dataset)):
-            # find correspond labeled data example, save relavant information
-            if split == "train":
-                valid_data_item = self.train_dataset[i]
-            elif split == "valid":
-                valid_data_item = self.valid_dataset[i]
-            else:
-                raise NotImplementedError()
-            src_tokens = item['input_ids'][item['prefix_prompt_length']:item['prefix_length']]
-            result = self.data_processor.convert_detected_sentence_to_infer_example(src_tokens, item['detection_predictions'])
-            std_result = self.data_processor.convert_detected_sentence_to_infer_example(
-                src_tokens, 
-                valid_data_item['detection_labels'][valid_data_item['prefix_prompt_length']:valid_data_item['prefix_length']]
-            )
-            for key in reserved_columns:
-                if key in item:
-                    result[key] = item[key]
-            result["complete_src_tokens"] = self.tokenizer.encode(result["text"])
-            result['golden_masked_src_token_ids'] = std_result["input_ids"][std_result["prefix_length"]:std_result["source_length"]]
-            test_dataset_for_generation.append(result)
-
-        max_gen_len = self.settings.max_new_tokens
-
-        ## save result one by one
-        f = open(os.path.join(save_dir, 'real-time-results.json'), 'w')
-        results = []
-
-        logging.info("GLM model do the generation:")
-        for i, test_data in tqdm(enumerate(test_dataset_for_generation)):
-            # check if the text is truncated.
-            complete_source_tokens = test_data["complete_src_tokens"]
-            length_input = test_data['prefix_length'] - test_data['prefix_prompt_length']
-            assert length_input <= len(complete_source_tokens), "Error: input ids can only be truncated, but found source tokens shorter than input tokens"
-            length_exceed_flag = (length_input < len(complete_source_tokens))
-            # record mask positions for generation
-            mask_positions = []
-            original_item = self.test_dataset[i]
-            # find correspond labeled data example, save relavant information
-            if split == "train":
-                valid_item = self.train_dataset[i]
-            elif split == "valid":
-                valid_item = self.valid_dataset[i]
-            else:
-                raise NotImplementedError()
-            
-            # get mask position from masked text
-            src_tokens = original_item['input_ids'][original_item['prefix_prompt_length']:original_item['prefix_length']]
-            detections = original_item['detection_predictions']
-            for idx, id in enumerate(test_data['input_ids']):
-                if id == self.tokenizer.mask_token_id:
-                    mask_positions.append(idx)
-            # generate until all mask is generated
-            while (test_data['input_ids'] == self.tokenizer.mask_token_id).sum() != (test_data['input_ids'] == self.tokenizer.eop_token_id).sum():
-                input_ids_length = len(test_data['input_ids'])
-                input_ids = torch.LongTensor(test_data['input_ids']).to(self.args.device).unsqueeze(0)
-                current_len = len(test_data['input_ids']) 
-                pad_position_ids = list(test_data['position_ids'][0]) + [test_data['position_ids'][0][-1]]*max_gen_len
-                pad_block_ids = list(test_data['position_ids'][1]) + list(range(test_data['position_ids'][1][-1]+1, test_data['position_ids'][1][-1]+max_gen_len+1))
-                position_ids = torch.stack([torch.LongTensor(pad_position_ids), torch.LongTensor(pad_block_ids)]).to(self.args.device).unsqueeze(0)
-                attention_mask = np.tril(np.ones((current_len+max_gen_len, current_len+max_gen_len), dtype=int))
-                attention_mask[:test_data['prefix_length'], :test_data['prefix_length']] = 1
-                attention_mask[test_data['prefix_length']:test_data['source_length'], :test_data['source_length']] = 1
-                attention_mask = torch.LongTensor(attention_mask).to(self.args.device).unsqueeze(0).unsqueeze(0)
-                outputs = self.model.generate(
-                    input_ids=input_ids, position_ids=position_ids, generation_attention_mask=attention_mask,
-                    max_new_tokens=max_gen_len, 
-                    eos_token_id=self.tokenizer.eop_token_id,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                    num_beams=self.settings.num_beams,
-                )
-                new_input_ids = list(test_data['input_ids']) + outputs[0].tolist()[input_ids_length:]
-                if new_input_ids[-1] != self.tokenizer.eop_token_id:
-                    new_input_ids.append(self.tokenizer.eop_token_id)
-                new_input_len = len(new_input_ids)
-                new_position_ids = pad_position_ids[:new_input_len]
-                new_block_ids = pad_block_ids[:new_input_len]
-                if new_input_ids.count(self.tokenizer.mask_token_id) != new_input_ids.count(self.tokenizer.eop_token_id):
-                    new_input_ids.append(self.tokenizer.sop_token_id)
-                    new_position_ids.append(mask_positions[new_input_ids.count(self.tokenizer.eop_token_id)])
-                    new_block_ids.append(1)
-                test_data['input_ids'] = np.array(new_input_ids, dtype=int)
-                test_data['position_ids'] = np.array([new_position_ids, new_block_ids], dtype=int)
-
-            # end generation
-            # mask position replace
-            generation_part = list(test_data['input_ids'][test_data['source_length']:])
-            generation_part_copy = copy.deepcopy(generation_part)
-            source_part = list(test_data['input_ids'][test_data['prefix_length']:test_data['source_length']])
-            source_part_copy = copy.deepcopy(source_part)
-            while source_part.count(self.tokenizer.mask_token_id) > 0:
-                first_mask_pos = source_part.index(self.tokenizer.mask_token_id)
-                first_sop_pos = generation_part.index(self.tokenizer.sop_token_id)
-                first_eop_pos = generation_part.index(self.tokenizer.eop_token_id)
-                source_part = source_part[:first_mask_pos] + generation_part[first_sop_pos+1: first_eop_pos] + source_part[first_mask_pos+1:]
-                generation_part = generation_part[first_eop_pos+1:]
-
-            # truncate text, concate the original rear text
-            if length_exceed_flag:
-                source_part = source_part[:-1] + complete_source_tokens[length_input-1:]
-                logger.info(
-                    f"Warning: Found truncation in current example. " \
-                    f"\nTruncated: {self.tokenizer.decode(test_data['input_ids'][test_data['prefix_prompt_length']:test_data['prefix_length']])}" \
-                    f"\nOriginal: {self.tokenizer.decode(complete_source_tokens)}" \
-                    f"\nFinal: {self.tokenizer.decode(source_part)}"
-                )
-            # post process
-            generation_res = self.tokenizer.decode(source_part, skip_special_tokens=True)
-            
-            assert 'label' in test_data, "Validation set without targets(labels)"
-            res = {
-                'id':test_data['id'], 'src': test_data['text'], 'tgt': test_data['label'], 'predict': generation_res,
-                'src_tokens': self.tokenizer.convert_ids_to_tokens(src_tokens),
-                'detections': [self.data_processor.edit_label_id_map[j] for j in detections],
-                # 'detection_logits': edit_label_probs[i],
-                'detection_labels': [self.data_processor.edit_label_id_map[j] for j in valid_item['detection_labels'][valid_item['prefix_prompt_length']:valid_item['prefix_length']]],
-                'predict_tokens': self.tokenizer.convert_ids_to_tokens(source_part),
-                'masked_src_tokens': self.tokenizer.convert_ids_to_tokens(source_part_copy),
-                'golden_masked_src_tokens': self.tokenizer.convert_ids_to_tokens(test_data['golden_masked_src_token_ids']),
-                'generated_tokens': self.tokenizer.convert_ids_to_tokens(generation_part_copy),
-            }
-            if 'other_labels' in test_data:
-                res['other_labels'] = test_data['other_labels']
-            results.append(res)
-            f.write(json.dumps(res, ensure_ascii=False) + '\n')
-
-        f.close()
-
-        return results
-    
-
-    def do_eval(self):
-        """
-        do infer on eval dataset and output as much midium ponents for debugging.
-        """
-        ## model
-        self.model.to(self.args.device)
-        self.model.eval()
-        ## dataset
-        # in eval mode, the true label information are required, so dataset transform is essential
-        # no detection results are allowed
-        assert self.settings.detection_results['train'] == self.settings.detection_results['test'] == self.settings.detection_results['valid'] == None
-        self.train_dataset_transform()
-        if self.args.task_mode == "eval_train":
-            logger.info("Eval Train Mode, evaluate on train dataset...")
-            train_eval_res = self.eval_on_dataset('train')
-        logger.info("Evaluate on validation dataset...")
-        valid_eval_res = self.eval_on_dataset('valid')
-        return valid_eval_res
-
 
     def save(self, save_dir):
         if self.args.task_mode == 'train':
@@ -1054,7 +825,7 @@ class Seq2SpanTrainer(TrainerBeta):
             if self.settings.use_lora:
                 logger.info("Lora model should have been loaded at the model construction.")
                 return
-            logger.info("Load complete model for CorrectionGLM to continue training.")
+            logger.info("Load complete model for Seq2Span to continue training.")
             path = os.path.join(save_dir, 'pytorch_model.bin')
             information = self.model.load_state_dict(torch.load(path), strict=False)
             logger.info(information)
@@ -1072,7 +843,7 @@ class Seq2SpanTrainer(TrainerBeta):
             if self.settings.use_lora:
                 logger.info("Lora model should have been loaded at the model construction.")
                 return
-            logger.info("Load complete model for CorrectionGLM.")
+            logger.info("Load complete model for Seq2Span.")
             path = os.path.join(save_dir, 'pytorch_model.bin')
             information = self.model.load_state_dict(torch.load(path))
             logger.info(information)

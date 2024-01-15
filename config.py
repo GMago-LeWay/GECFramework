@@ -931,7 +931,7 @@ class Config:
         return NotImplementedError() if tune else Config
     
     def __Seq2Span(self, tune):
-        Config = {
+        default_config = {
             # identifier
             'name': 'seq2span',
 
@@ -1005,12 +1005,30 @@ class Config:
             'keep_threshold': None,         # any position which has $KEEP probability > keep_threshold will be set to $KEEP
             'error_threshold': None,        # any position which has $ERROR probability < error_threshold will never be set to $ERROR
             'insert_threshold': None,       # any position which has $ERROR probability < insert_threshold will never be set to $INSERT
-            'num_beams': 12,
+            'num_beams': 3,
             'max_new_tokens': 10,
 
         }
 
-        return NotImplementedError() if tune else Config
+        # load glm configs
+        if os.path.exists(self.preconfig.config):
+            logger.info(f"Successfully loaded config in {self.preconfig.config}.")
+            compute_keys = ['pretrained_model', 'torch_dtype']
+            loaded_config = json.load(open(self.preconfig.config))
+            for key in compute_keys:
+                loaded_config[key] = eval(loaded_config[key])
+
+            # sustitute glm model
+            loaded_config['name'] = 'seq2span'
+            plm = loaded_config['pretrained_model']
+            plm = plm.replace('glm-large-chinese', 'bart-large-chinese')
+            plm = plm.replace('glm-roberta-large', 'bart-large')
+
+            return loaded_config
+        else:
+            logger.info(f"Using config defined in config.py.")
+            return default_config
+        
     
     def __OpenAI(self):
         generation_config = {
