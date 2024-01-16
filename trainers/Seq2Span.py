@@ -45,9 +45,9 @@ class DataCollatorForGLMGEC:
     def __call__(self, features):
         # print(len(features))
         full_lengths = [len(item["input_ids"]) for item in features]
-        source_lengths = [item['source_length'] for item in features]
-        target_lengths = [full_len - src_len for full_len, src_len in zip(full_lengths, source_lengths)]
-        max_input_len = max(max(source_lengths), 1)
+        prefix_lengths = [item['prefix_length'] for item in features]
+        target_lengths = [full_len - prefix_len for full_len, prefix_len in zip(full_lengths, prefix_lengths)]
+        max_input_len = max(max(prefix_lengths), 1)
         max_target_len = max(max(target_lengths), 1)
 
         batch_size = len(features)
@@ -61,16 +61,16 @@ class DataCollatorForGLMGEC:
         # pad input_ids, target ids
         # pad mode: max
         for i, sample in enumerate(features):
-            current_len = source_lengths[i]
+            current_prefix_len = prefix_lengths[i]
             current_target_len = target_lengths[i]
-            assert current_len + current_target_len == len(sample['target_ids']) == len(sample['detection_labels']) == len(sample['input_ids'])
-            pad_input_ids = list(sample['input_ids'][:current_len]) + [self.tokenizer.pad_token_id]*(max_input_len-current_len)
+            assert current_prefix_len + current_target_len == len(sample['target_ids']) == len(sample['detection_labels']) == len(sample['input_ids'])
+            pad_input_ids = list(sample['input_ids'][:current_prefix_len]) + [self.tokenizer.pad_token_id]*(max_input_len-current_prefix_len)
             batch_input_ids.append(pad_input_ids)
-            pad_decoder_input_ids = list(sample['input_ids'][current_len:]) + [self.tokenizer.pad_token_id]*(max_target_len-current_target_len)
+            pad_decoder_input_ids = list(sample['input_ids'][current_prefix_len:]) + [self.tokenizer.pad_token_id]*(max_target_len-current_target_len)
             batch_decoder_input_ids.append(pad_decoder_input_ids)
-            pad_target_ids = list(sample['target_ids'][current_len:]) + [self.loss_ignore_id]*(max_target_len-current_target_len)
+            pad_target_ids = list(sample['target_ids'][current_prefix_len:]) + [self.loss_ignore_id]*(max_target_len-current_target_len)
             batch_target_ids.append(pad_target_ids)
-            pad_detection_labels = list(sample['detection_labels'][:current_len]) + [self.loss_ignore_id]*(max_input_len-current_len)
+            pad_detection_labels = list(sample['detection_labels'][:current_prefix_len]) + [self.loss_ignore_id]*(max_input_len-current_prefix_len)
             batch_detection_label_ids.append(pad_detection_labels)
 
         # batch encoding
@@ -717,18 +717,18 @@ class Seq2SpanTrainer(TrainerBeta):
                     mask_positions.append(idx)
             # generate until all mask is generated
             # print(type(test_data['input_ids']))
-            known_eop_token_num = (test_data['input_ids'] == self.tokenizer.eop_token_id).sum()
-            while (test_data['input_ids'] == self.tokenizer.mask_token_id).sum() != (test_data['input_ids'] == self.tokenizer.eop_token_id).sum() - known_eop_token_num:
+            known_sop_token_num = (test_data['input_ids'] == self.data_processor.sop_token_id).sum()
+            # every time local error correction is done, sop token will be appended, so when appended sop tokens num equals to mask tokens num, stop generation
+            while (test_data['input_ids'] == self.tokenizer.mask_token_id).sum() > (test_data['input_ids'] == self.data_processor.sop_token_id).sum() - known_sop_token_num:
                 input_ids_length = len(test_data['input_ids'])
-                input_ids = torch.LongTensor(test_data['input_ids'][:test_data['source_length']]).to(self.args.device).unsqueeze(0)
-                decoder_input_ids = torch.LongTensor(test_data['input_ids'][test_data['source_length']:]).to(self.args.device).unsqueeze(0)
+                input_ids = torch.LongTensor(test_data['input_ids'][:test_data['prefix_length']]).to(self.args.device).unsqueeze(0)
+                decoder_input_ids = torch.LongTensor(test_data['input_ids'][test_data['prefix_length']:]).to(self.args.device).unsqueeze(0)
                 try:
-                    outputs = self.model.generate(
+                    outputs = self.model.bart.generate(
                         input_ids=input_ids,
                         decoder_input_ids=decoder_input_ids,
                         max_new_tokens=max_gen_len, 
-                        eos_token_id=self.tokenizer.eop_token_id,
-                        pad_token_id=self.tokenizer.eos_token_id,
+                        eos_token_id=self.data_processor.eop_token_id,
                         num_beams=self.settings.num_beams,
                     )
                 except Exception as e:
@@ -737,24 +737,24 @@ class Seq2SpanTrainer(TrainerBeta):
                     print(self.tokenizer.decode(input_ids[0].tolist()))
                     print(input_ids.shape, input_ids)
                     exit()
-                new_input_ids = list(test_data['input_ids']) + outputs[0].tolist()[input_ids_length:]
-                if new_input_ids[-1] != self.tokenizer.eop_token_id:
-                    new_input_ids.append(self.tokenizer.eop_token_id)
+                generated_segment = list(filter(lambda x: x not in self.tokenizer.all_special_ids, outputs[0].tolist()[len(test_data['input_ids'])-test_data['prefix_length']:]))
+                new_input_ids = list(test_data['input_ids']) + generated_segment
+                if new_input_ids[-1] == self.data_processor.eop_token_id:
+                    new_input_ids = new_input_ids[:-1]
                 new_input_len = len(new_input_ids)
-                if new_input_ids.count(self.tokenizer.mask_token_id) != new_input_ids.count(self.tokenizer.eop_token_id):
-                    new_input_ids.append(self.tokenizer.sop_token_id)
+                new_input_ids.append(self.data_processor.sop_token_id)
                 test_data['input_ids'] = np.array(new_input_ids, dtype=int)
 
             # end generation
             # mask position replace
-            generation_part = list(test_data['input_ids'][test_data['source_length']:])
+            generation_part = list(test_data['input_ids'][test_data['source_length']:]) 
             source_part = list(test_data['input_ids'][test_data['prefix_length']:test_data['source_length']])
             while source_part.count(self.tokenizer.mask_token_id) > 0:
                 first_mask_pos = source_part.index(self.tokenizer.mask_token_id)
-                first_sop_pos = generation_part.index(self.tokenizer.sop_token_id)
-                first_eop_pos = generation_part.index(self.tokenizer.eop_token_id)
-                source_part = source_part[:first_mask_pos] + generation_part[first_sop_pos+1: first_eop_pos] + source_part[first_mask_pos+1:]
-                generation_part = generation_part[first_eop_pos+1:]
+                first_sop_pos = generation_part.index(self.data_processor.sop_token_id)
+                second_sop_pos = generation_part.index(self.data_processor.sop_token_id, first_sop_pos+1)
+                source_part = source_part[:first_mask_pos] + generation_part[first_sop_pos+1: second_sop_pos] + source_part[first_mask_pos+1:]
+                generation_part = generation_part[second_sop_pos:]
             
             # truncate text, concate the original rear text
             if length_exceed_flag:
@@ -767,6 +767,8 @@ class Seq2SpanTrainer(TrainerBeta):
                 )
             # post process
             generation_res = self.tokenizer.decode(source_part, skip_special_tokens=True)
+            if self.args.dataset in ['fcgec', 'mucgec']:
+                generation_res = generation_res.replace(" ", "") 
             
             if 'label' in test_data:
                 res = {'id':test_data['id'], 'src': test_data['text'], 'tgt': test_data['label'], 'predict': generation_res}

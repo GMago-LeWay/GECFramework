@@ -474,8 +474,8 @@ class ExperimentsOfGECBeta:
             th = round(th, 2)
             config.keep_threshold = th
             result_f, result_p, result_r = {}, {}, {}
-            th1_list = [round(th1, 2) for th1 in list(np.arange(0.35, 0.8, 0.05))]
-            th2_list = [round(th2, 2) for th2 in list(np.arange(0.35, 0.8, 0.05))]
+            th1_list = [round(th1, 2) for th1 in list(np.arange(0.5, 0.71, 0.1))]
+            th2_list = [round(th2, 2) for th2 in list(np.arange(0.6, 0.81, 0.1))]
             result_f["INSERT"], result_p["INSERT"], result_r["INSERT"] = th2_list, th2_list, th2_list
             for th1 in th1_list:
                 result_f[th1], result_p[th1], result_r[th1] = [], [], []

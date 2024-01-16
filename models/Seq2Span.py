@@ -82,9 +82,7 @@ class Seq2Span(BartPretrainedModel):
         # BART model prediction
         model_out = self.bart(
             input_ids=input_ids,
-            attention_mask=None,
             decoder_input_ids=decoder_input_ids,
-            decoder_attention_mask=None,
         )
         outputs, lm_logits = model_out.encoder_last_hidden_state, model_out.logits
         lm_loss = self.lm_loss(lm_logits.view(-1, lm_logits.shape[-1]), target_ids.view(-1))
