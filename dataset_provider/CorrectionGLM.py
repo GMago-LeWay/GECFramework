@@ -37,7 +37,7 @@ def index_in_list(lst, val, start=None):
 
 
 class TokenizerBasedTextEditProcessor:
-    def __init__(self, tokenizer, without_insert=False, max_sequence_length=None, task_mode=None) -> None:
+    def __init__(self, tokenizer, without_insert=False, with_delete=False, max_sequence_length=None, task_mode=None) -> None:
         self.tokenizer = tokenizer
         self.max_sequence_length = max_sequence_length
         self.task_mode = task_mode
@@ -48,21 +48,24 @@ class TokenizerBasedTextEditProcessor:
         self.keep_label = '$KEEP'
         self.insert_label = '$INSERT' # Notice that 'insert' means insertion AFTER the current token
         self.error_label = '$ERROR'
+        self.delete_label = '$DELETE'
         self.ignore_label = '$IGNORE'
         self.edit_label_map = {
             self.ignore_label: IGNORE_ID,
             self.keep_label: 0,
             self.error_label: 1,
             self.insert_label: 2,
+            self.delete_label: 3,
         }
         self.edit_label_id_map = {
             0: self.keep_label,
             1: self.error_label,
             2: self.insert_label,
+            3: self.delete_label
         }
         self.without_insert = without_insert
-        # self.delete_label = '$DELETE'
-        # self.replace_label = '$REPLACE'
+        self.with_delete = with_delete
+
         self.marker1 = ['。', '？', '！', '；', '…', '?', '!', '.', '\n']
         self.marker2 = ['”', '’', '"', '\\', '、', ',', '，']
         self.marker1_ids = self.tokenizer.convert_tokens_to_ids(self.marker1)
@@ -206,6 +209,10 @@ class TokenizerBasedTextEditProcessor:
             else:  # i1<i2
                 for i in range(i1, i2):
                     labels[i] = self.error_label
+                if self.with_delete:
+                    if j1==j2:
+                        for i in range(i1, i2):
+                            labels[i] = self.delete_label
         return labels
 
 
@@ -231,18 +238,23 @@ class GLMDataProcessor:
         else:
             self.eop_token = tokenizer.eos_token
             self.eop_token_id = tokenizer.eos_token_id
-        assert config.num_labels in [2, 3]
+        assert config.num_labels in [2, 3, 4]
         if config.num_labels == 2:
             self.without_insert = True
         else:
             self.without_insert = False
-        self.edit_extractor = TokenizerBasedTextEditProcessor(self.tokenizer, without_insert=self.without_insert, max_sequence_length=self.max_length, task_mode=args.task_mode)
+        if config.num_labels == 4:
+            self.with_delete = True
+        else:
+            self.with_delete = False
+        self.edit_extractor = TokenizerBasedTextEditProcessor(self.tokenizer, without_insert=self.without_insert, with_delete=self.with_delete, max_sequence_length=self.max_length, task_mode=args.task_mode)
         self.args = args
         self.config = config
         # edit settings
         self.keep_label = self.edit_extractor.keep_label
         self.insert_label = self.edit_extractor.insert_label
         self.error_label = self.edit_extractor.error_label
+        self.delete_label = self.edit_extractor.delete_label
         self.ignore_label = self.edit_extractor.ignore_label
         self.edit_label_map = self.edit_extractor.edit_label_map
         self.edit_label_id_map = self.edit_extractor.edit_label_id_map
@@ -255,7 +267,10 @@ class GLMDataProcessor:
         position_ids = np.ones(len(original_tgt_tokens)+1, dtype=int)        # +1 exclude bug when tgt_start = tgt_end = len(tgt_tokens)
         for _, _, _, tgt_start, tgt_end in edits:
             if tgt_start==tgt_end: # DELETE operation. In the span a [MASK] will be added, this position id should be reserved.
-                position_ids[tgt_start] += 1
+                if self.with_delete:
+                    pass
+                else:
+                    position_ids[tgt_start] += 1
             else:
                 position_ids[tgt_start + 1: tgt_end] = 0
         position_ids = np.cumsum(position_ids) - 1
@@ -263,6 +278,9 @@ class GLMDataProcessor:
         # target_tokens: input end ; targets: output end
         target_tokens, target_position_ids, target_block_position_ids, targets = [], [], [], []
         for _, src_start, src_end, tgt_start, tgt_end in edits:
+            if tgt_start == tgt_end and self.with_delete:
+                # mode with DELETE: the empty text piece will not be generated
+                continue
             target_tokens.append([self.sop_token_id])
             if tgt_start == tgt_end: # DELETE operation position, reserved position id
                 target_position_ids.append([position_ids[tgt_start]-1])
@@ -285,13 +303,18 @@ class GLMDataProcessor:
             if last != tgt_start:
                 source_tokens.append(original_tgt_tokens[last: tgt_start])
                 source_position_ids.append(position_ids[last: tgt_start])
-            source_tokens.append([mask_id])
-            if tgt_start == tgt_end: # DELETE operation position, reserved position id
-                source_position_ids.append([position_ids[tgt_start]-1])
+            if self.with_delete:
+                # mode with DELETE: will not add MASK
+                current_length += (tgt_start - last)
+                last = tgt_end
             else:
-                source_position_ids.append([position_ids[tgt_start]])
-            current_length += tgt_start - last + 1
-            last = tgt_end
+                source_tokens.append([mask_id])
+                if tgt_start == tgt_end: # original DELETE operation position, reserved position id
+                    source_position_ids.append([position_ids[tgt_start]-1])
+                else:
+                    source_position_ids.append([position_ids[tgt_start]])
+                current_length += (tgt_start - last + 1)
+                last = tgt_end
         if last < len(original_tgt_tokens):
             # local_spans.append((current_length, current_length + len(original_src_tokens) - last))
             source_tokens.append(original_tgt_tokens[last:])
@@ -313,7 +336,8 @@ class GLMDataProcessor:
             'source_length': source_length,
         }
     
-    def from_edit_label_to_masked_example(self, edit_labels: List[str], src_tokens: List[int]):
+    def from_edit_label_to_masked_example(self, _edit_labels: List[str], _src_tokens: List[int]):
+        edit_labels, src_tokens = list(_edit_labels), list(_src_tokens)
         if len(edit_labels) != len(src_tokens):
             # assert len(edit_labels) > len(src_tokens), f"Unmatched predictions {len(edit_labels)} and source tokens {len(src_tokens)}: " + self.tokenizer.decode(src_tokens)
             if len(edit_labels) > len(src_tokens):
@@ -327,6 +351,17 @@ class GLMDataProcessor:
             edit_labels[-1] = self.keep_label
             LAST_DETECTION_ERROR_NUM += 1
             logger.info(f"({LAST_DETECTION_ERROR_NUM})Warning: Last position is not $KEEP when using edit labels for converting to masked sentence. It is illegal, set it to $KEEP.")
+
+        # mode with DELETE: first remove tokens with edit label = delete
+        if self.with_delete:
+            src_tokens_after_delete = []
+            edit_labels_after_delete = []
+            for i, edit_label in enumerate(edit_labels):
+                if edit_label != self.delete_label:
+                    src_tokens_after_delete.append(src_tokens[i])
+                    edit_labels_after_delete.append(edit_labels[i])
+            src_tokens, edit_labels = src_tokens_after_delete, edit_labels_after_delete
+
 
         last_correct_token_idx = -1
         # get mask spans
@@ -342,7 +377,9 @@ class GLMDataProcessor:
                     mask_spans.append((last_correct_token_idx+1, i))
                 # case 2: the last token is i-1 but last label is INSERT (like ...I,K... or ...I,I... )
                 else:
-                    if last_correct_token_idx > 0 and edit_labels[i-1]==self.insert_label:
+                    # BUG, Found at 2024/01/17 23:52 Error: '''last_correct_token_idx > 0''' Should be '''last_correct_token_idx >= 0'''
+                    # possible minor influence: SFT2(need to convert) GENERATION(first insert was omitted)
+                    if last_correct_token_idx >= 0 and edit_labels[i-1]==self.insert_label:
                         mask_spans.append((i, i))
                 last_correct_token_idx = i
         

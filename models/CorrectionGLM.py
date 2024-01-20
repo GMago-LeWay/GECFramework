@@ -155,8 +155,11 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
             self.out_proj = torch.nn.Linear(config.hidden_size, settings.num_labels, dtype=settings.torch_dtype)
             # Labeling Loss
             # self.labeling_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction='mean')
-            self.labeling_loss = MultiFocalLoss(num_class=settings.num_labels, alpha=settings.alpha, gamma=2, 
-                                                reduction=self.settings.loss_reduce, dtype=settings.torch_dtype, ignore_id=settings.loss_ignore_id)
+            if settings.alpha:
+                self.labeling_loss = MultiFocalLoss(num_class=settings.num_labels, alpha=settings.alpha, gamma=2, 
+                                                    reduction=self.settings.loss_reduce, dtype=settings.torch_dtype, ignore_id=settings.loss_ignore_id)
+            else:
+                self.labeling_loss = CrossEntropyLoss(num_class=settings.num_labels, reduction=self.settings.loss_reduce, dtype=settings.torch_dtype, ignore_id=settings.loss_ignore_id)
         # Initialize weights and apply final processing
         self.post_init()
 

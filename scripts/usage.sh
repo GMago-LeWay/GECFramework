@@ -19,3 +19,7 @@ python main.py --task_mode train --dataset mucgec --save_root_dir results_glm --
 
 # infer on correction glm model
 python main.py --task_mode infer --dataset mucgec --save_root_dir results_infer --load xxx --devices 0
+
+
+# custom mode
+python main.py --dataset wilocness --task_mode custom --save_root_dir results_main --devices 2 --load results_main/correctionglm-clang8-train_infer-20240114-2117/checkpoint-36000 --config configs/clang8_correctionglm_sft2.json 
