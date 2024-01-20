@@ -24,7 +24,7 @@
     "detection_results": {
         "train": "results_detach/correctionglm-clang8-train_eval_infer-20240111-1135/train/detection_results.json",
         "valid": "results_detach/correctionglm-clang8-train_eval_infer-20240111-1135/valid/detection_results.json",
-        "test": "results_detach/correctionglm-clang8-train_eval_infer-20240111-1135/test/detection_results.json"
+        "test": "results_detach/correctionglm-wilocness-infer-20240118-0017/test/detection_results.json"
     },
     "gradient_accumulation_steps": 20,
     "train_batch_size": 12,

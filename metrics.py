@@ -558,7 +558,7 @@ import wandb
 
 class DetectionCorrectionMetrics:
     def __init__(self, model_type, labels_num=3, loss_ignore_id=-100) -> None:
-        assert labels_num in [2,3]
+        assert labels_num in [2, 3, 4]
         assert model_type in ['all', 'detection', 'generate']
         self.model_type = model_type
         self.labels_num = labels_num
@@ -586,12 +586,23 @@ class DetectionCorrectionMetrics:
         keep_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=keep_pred_weights)
         error_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=error_pred_weights)
 
-        if self.labels_num == 3:
+        if self.labels_num >= 3:
             insert_pred_weights = ((detection_labels==2)*1).ravel()
             insert_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=insert_pred_weights)
-            detection_geometric_accuracy = ( keep_accuracy*error_accuracy*insert_accuracy ) ** (1/3)
-            return {'detection_accuracy': detection_accuracy, 'detection_geometric_accuracy': detection_geometric_accuracy,
-                    'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy, 'insert_accuracy': insert_accuracy, 'error_acc_sum': error_accuracy+insert_accuracy}
+            if self.labels_num == 4:
+                # KEEP ERROR INSERT DELETE
+                delete_pred_weights = ((detection_labels==3)*1).ravel()
+                delete_accuracy = self.accuracy(references=detection_labels, predictions=detection_pred_ids, weights=delete_pred_weights)
+                detection_geometric_accuracy = ( keep_accuracy*error_accuracy*insert_accuracy*delete_accuracy ) ** (1/4)
+                return {'detection_accuracy': detection_accuracy, 'detection_geometric_accuracy': detection_geometric_accuracy,
+                        'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy, 'insert_accuracy': insert_accuracy, 'delete_accuracy': delete_accuracy,
+                        'error_acc_sum': error_accuracy+insert_accuracy+delete_accuracy}
+            else:
+                # KEEP ERROR INSERT
+                detection_geometric_accuracy = ( keep_accuracy*error_accuracy*insert_accuracy ) ** (1/3)
+                return {'detection_accuracy': detection_accuracy, 'detection_geometric_accuracy': detection_geometric_accuracy,
+                        'keep_accuracy': keep_accuracy, 'error_accuracy': error_accuracy, 'insert_accuracy': insert_accuracy, 
+                        'error_acc_sum': error_accuracy+insert_accuracy}
         else:
             detection_geometric_accuracy = ( keep_accuracy*error_accuracy ) ** (1/2)
             return {'detection_accuracy': detection_accuracy, 'detection_geometric_accuracy': detection_geometric_accuracy,
