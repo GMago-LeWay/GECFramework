@@ -22,8 +22,8 @@
     "prompt": "",
     "detection_load_way": "detections",
     "detection_results": {
-        "train": "results_wo/seq2span-clang8-train_eval_infer-20240118-0221/train/detection_results.json",
-        "valid": "results_wo/seq2span-clang8-train_eval_infer-20240118-0221/valid/detection_results.json",
+        "train": "results_main/correctionglm-clang8-train_eval_infer-20240113-1720/train/detection_results.json",
+        "valid": "results_main/correctionglm-clang8-train_eval_infer-20240113-1720/valid/detection_results.json",
         "test": null
     },
     "gradient_accumulation_steps": 20,

@@ -441,7 +441,7 @@ class ExperimentsOfGECBeta:
         return json_results
     
     def run_custom(self, config):
-        assert self.args.model == 'correctionglm' and self.args.dataset in ['wilocness', 'mucgec_dev']
+        assert self.args.model in ['seq2span', 'correctionglm'] and self.args.dataset in ['wilocness', 'mucgec_dev']
         # threshold experiment
         self.args.task_mode = TaskMode.infer
         original_save_dir = str(self.args.save_dir)
@@ -450,7 +450,7 @@ class ExperimentsOfGECBeta:
         self.run_infer(config)
 
         # keep threshold
-        for th in np.arange(0.35, 0.46, 0.01):
+        for th in np.arange(0.34, 0.46, 0.02):
             th = round(th, 2)
             config.keep_threshold = th
             logger.info(f"KEEP threshold {th} inference:")
