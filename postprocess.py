@@ -36,11 +36,13 @@ RETOKENIZATION_RULES = [
 ]
 
 CONLL14_M2_FILE = 'utils/m2scorer/official-2014.combined.m2'
+BEA_DEV_M2_FILE = '../datasets/BEA19_dev/ABCN.dev.gold.bea19.m2'
 MUCGEC_DEV_M2_FILE = '../datasets/MuCGEC/MuCGEC_dev/valid.gold.m2.char'
 
 class PostProcessManipulator:
     cn_marker = 'cn_marker'
     mucgec_eval = 'mucgec_dev_eval'
+    bea_eval = 'bea_eval'
     merge_sample = 'merge_sample'
     en_test = 'en_test'
     en_test_py3 = 'en_test_py3'
@@ -70,6 +72,7 @@ class PostProcess:
             PostProcessManipulator.en_test: self._en_conll_bea_postprocess_py2,
             PostProcessManipulator.en_test_py3: self._en_conll_bea_postprocess_py3,
             PostProcessManipulator.mucgec_eval: self._mucgec_dev_evaluation,
+            PostProcessManipulator.bea_eval: self._bea_dev_evaluation,
             # 'spacy_retokenize': self._retokenize,
         }
 
@@ -79,6 +82,7 @@ class PostProcess:
             PostProcessManipulator.en_test: ['c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid'],
             PostProcessManipulator.en_test_py3: ['c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid'],
             PostProcessManipulator.mucgec_eval: ['mucgec_dev'],
+            PostProcessManipulator.bea_eval: ['bea_dev'],
         }
 
     def _chinese_marker_substitute(self):
@@ -237,7 +241,7 @@ class PostProcess:
         bea19_start_index = None
         test_data = {'conll14': [], 'bea19': []}
         current_dataset = 'conll14'
-        logger.info("Load CoNLL14 test data...")
+        logger.info("Postprocessing CoNLL14 test data...")
         for i in range(len(self.results)):
             assert 'conll14' in self.results[i]["id"] or 'bea19' in self.results[i]["id"], "Current test set is not the concatenation of CoNLL14 and BEA19."
             # check current result item belongs to which test set
@@ -246,7 +250,7 @@ class PostProcess:
                 last_number = -1
                 bea19_start_index = i
                 current_dataset = 'bea19'
-                logger.info("Load BEA19 test data...")
+                logger.info("Postprocessing BEA19 test data...")
             assert eval(number) == last_number + 1
             last_number = eval(number)
             assert data_source in test_data
@@ -285,6 +289,26 @@ class PostProcess:
                 f.write(item["predict"] + '\n')
         with zipfile.ZipFile(os.path.join(self.save_dir, 'bea19.zip'), mode='w') as zipf:
             zipf.write(bea19_file_path, bea19_file_name)
+
+    def _bea_dev_evaluation(self):
+        for i in range(len(self.results)):
+            self.results[i] = PostProcess.bea_postprocess(self.results[i])
+        # conll14 evaluation
+        global BEA_DEV_M2_FILE
+        bea_dev_file_name = 'bea19_dev.txt'
+        bea_dev_file_path = os.path.join(self.save_dir, bea_dev_file_name)
+        evaluation_result_file = os.path.join(self.save_dir, 'bea19_dev_metrics.txt')
+        with open(bea_dev_file_path, 'w') as f:
+            for item in self.results:
+                f.write(item["predict"] + '\n')
+        os.system(f"{PYTHON2_PATH} utils/m2scorer/scripts/m2scorer.py {bea_dev_file_path} {BEA_DEV_M2_FILE} >> {evaluation_result_file}")
+        # print metrics of bea-19 dev set
+        metrics_lines = open(evaluation_result_file).readlines()
+        precision_name, _, precision = metrics_lines[0].strip().split()
+        recall_name, _, recall = metrics_lines[1].strip().split()
+        f_05_name, _, f_05 = metrics_lines[2].strip().split()
+        logger.info(f"{precision_name}\t{recall_name}\t{f_05_name}")
+        logger.info(f"{precision}\t{recall}\t{f_05}")
 
     def _mucgec_dev_evaluation(self):
         ids = [item["id"] for item in self.results]

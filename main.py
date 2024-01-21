@@ -490,9 +490,12 @@ class ExperimentsOfGECBeta:
                     if not os.path.exists(self.args.save_dir):
                         os.makedirs(self.args.save_dir)
                     self.run_infer(config)
-                    if self.args.dataset == 'wilocness':
+                    if self.args.dataset in ['wilocness', 'bea_dev']:
                         # read conll14 result
-                        evaluation_result_file = os.path.join(self.args.save_dir, 'test', 'conll14_metrics.txt')
+                        if self.args.dataset == 'wilocness':
+                            evaluation_result_file = os.path.join(self.args.save_dir, 'test', 'conll14_metrics.txt')
+                        else:
+                            evaluation_result_file = os.path.join(self.args.save_dir, 'test', 'bea19_dev_metrics.txt')
                         # print metrics of conll14
                         metrics_lines = open(evaluation_result_file).readlines()
                         precision_name, _, precision = metrics_lines[0].strip().split()
