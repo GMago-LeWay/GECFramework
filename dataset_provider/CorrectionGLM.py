@@ -452,7 +452,12 @@ class GLMDataProcessor:
             if detection_labels[i] != self.keep_label:
                 new_detections.append(detection_labels[i])
             else:
-                new_detections.append(detections[i])
+                # mode with DELETE, $DELETE cannot exist other than original detection label is $DELETE
+                if detections[i] == self.delete_label:
+                    new_detections.append(detection_labels[i])
+                # add Non-keep detection 
+                else:
+                    new_detections.append(detections[i])
         masked_example = self.from_edit_label_to_masked_example(new_detections, src_tokens)
         mask_positions = masked_example['mask_positions']
         masked_tokens = masked_example['input_ids'].tolist()

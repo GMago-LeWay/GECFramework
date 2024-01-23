@@ -447,10 +447,10 @@ class ExperimentsOfGECBeta:
         original_save_dir = str(self.args.save_dir)
 
         # null ctrl
-        self.run_infer(config)
+        # self.run_infer(config)
 
         # keep threshold
-        for th in np.arange(0.34, 0.46, 0.02):
+        for th in np.arange(0.38, 0.45, 0.01):
             th = round(th, 2)
             config.keep_threshold = th
             logger.info(f"KEEP threshold {th} inference:")
