@@ -53,7 +53,7 @@
     "detection_only": false,
     "post_process": [
         "cn_marker",
-        "fcgec_dev"
+        "fcgec_dev_eval"
     ],
     "load_config_keys": [
         "model_type",
