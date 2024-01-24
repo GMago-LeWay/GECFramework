@@ -49,6 +49,7 @@ DATA_DIR_NAME = {
     'fangzhengdapei': "FangZhengDapei",
     'pretrain': "PreTrainSetLarge",
     'mucgec_dev': "MuCGEC/MuCGEC_dev",
+    'fcgec_dev': "FCGEC/FCGEC_dev",
     'bea_dev': "BEA19_dev",
     'c4': "C4-200M",
     'wilocness': "WILocness",

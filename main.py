@@ -441,7 +441,7 @@ class ExperimentsOfGECBeta:
         return json_results
     
     def run_custom(self, config):
-        assert self.args.model in ['seq2span', 'correctionglm'] and self.args.dataset in ['wilocness', 'mucgec_dev', 'bea_dev']
+        assert self.args.model in ['seq2span', 'correctionglm'] and self.args.dataset in ['wilocness', 'mucgec_dev', 'fcgec_dev', 'bea_dev']
         # threshold experiment
         self.args.task_mode = TaskMode.infer
         original_save_dir = str(self.args.save_dir)
@@ -501,8 +501,8 @@ class ExperimentsOfGECBeta:
                         precision_name, _, precision = metrics_lines[0].strip().split()
                         recall_name, _, recall = metrics_lines[1].strip().split()
                         f_05_name, _, f_05 = metrics_lines[2].strip().split()
-                    elif self.args.dataset == 'mucgec_dev':
-                        evaluation_result_file = os.path.join(self.args.save_dir, 'test', 'mucgec_dev_metrics.json')
+                    elif self.args.dataset in ['mucgec_dev', 'fcgec_dev']:
+                        evaluation_result_file = os.path.join(self.args.save_dir, 'test', f'{self.args.dataset}_metrics.json')
                         metrics_item = json.load(open(evaluation_result_file))
                         precision = metrics_item['precision']
                         recall = metrics_item['recall']
@@ -663,7 +663,11 @@ if __name__ == '__main__':
     args.device = 'cuda:'+ str(args.device) if args.device >= 0 else 'cpu'
     # set save directory
     time_str = time.strftime('%Y%m%d-%H%M',time.localtime())
-    args.save_dir = os.path.join(args.save_root_dir, f'{args.model}-{args.dataset}-{args.task_mode}-{time_str}')
+    if args.resume:
+        assert 'checkpoint-' in os.path.basename(args.resume), "Resume directory must be a medium checkpoint directory."
+        args.save_dir = os.path.dirname(args.resume)
+    else:
+        args.save_dir = os.path.join(args.save_root_dir, f'{args.model}-{args.dataset}-{args.task_mode}-{time_str}')
 
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)

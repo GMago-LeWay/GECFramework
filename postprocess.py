@@ -7,7 +7,7 @@ import codecs
 from nltk import word_tokenize
 import re
 import codecs
-from utils.ChERRANT.main import compute_cherrant_with_ref_file
+from utils.ChERRANT.main import compute_cherrant_with_ref_file, compute_cherrant
 import spacy
 en = spacy.load("en_core_web_sm")
 
@@ -38,10 +38,12 @@ RETOKENIZATION_RULES = [
 CONLL14_M2_FILE = 'utils/m2scorer/official-2014.combined.m2'
 BEA_DEV_M2_FILE = '../datasets/BEA19_dev/ABCN.dev.gold.bea19.m2'
 MUCGEC_DEV_M2_FILE = '../datasets/MuCGEC/MuCGEC_dev/valid.gold.m2.char'
+FCGEC_DEV_FILE = '../datasets/FCGEC/FCGEC_dev/test.json'
 
 class PostProcessManipulator:
     cn_marker = 'cn_marker'
     mucgec_eval = 'mucgec_dev_eval'
+    fcgec_eval = 'fcgec_dev_eval'
     bea_eval = 'bea_eval'
     merge_sample = 'merge_sample'
     en_test = 'en_test'
@@ -73,16 +75,18 @@ class PostProcess:
             PostProcessManipulator.en_test_py3: self._en_conll_bea_postprocess_py3,
             PostProcessManipulator.mucgec_eval: self._mucgec_dev_evaluation,
             PostProcessManipulator.bea_eval: self._bea_dev_evaluation,
+            PostProcessManipulator.fcgec_eval: self._fcgec_dev_evaluation,
             # 'spacy_retokenize': self._retokenize,
         }
 
         self.allowed_dataset = {
-            PostProcessManipulator.cn_marker: ['mucgec', 'fcgec', 'pretrain', 'fangzhenggrammar', 'fangzhengspell', 'mucgec_dev'],
+            PostProcessManipulator.cn_marker: ['mucgec', 'fcgec', 'pretrain', 'fangzhenggrammar', 'fangzhengspell', 'mucgec_dev', 'fcgec_dev'],
             PostProcessManipulator.merge_sample: ['mucgec', 'fcgec', 'pretrain', 'fangzhenggrammar', 'fangzhengspell', 'c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid'],
             PostProcessManipulator.en_test: ['c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid'],
             PostProcessManipulator.en_test_py3: ['c4', 'lang8', 'clang8', 'nucle', 'wilocness', 'hybrid'],
             PostProcessManipulator.mucgec_eval: ['mucgec_dev'],
             PostProcessManipulator.bea_eval: ['bea_dev'],
+            PostProcessManipulator.fcgec_eval: ['fcgec_dev'],
         }
 
     def _chinese_marker_substitute(self):
@@ -326,6 +330,30 @@ class PostProcess:
         evaluation_metric_file = os.path.join(self.save_dir, 'mucgec_dev_metrics.json')
         json.dump(eval_metrics, open(evaluation_metric_file, 'w'), indent=4, ensure_ascii=False)
 
+    def _fcgec_dev_evaluation(self):
+        ids = [item["id"] for item in self.results]
+        src_texts = [item["src"] for item in self.results]
+        predict_texts = [item["predict"] for item in self.results]
+        dev_data = json.load(open(FCGEC_DEV_FILE))
+        tgt_texts = [[item['label']] + item['other_labels'] for item in dev_data]
+
+        # check id
+        assert len(ids) == len(dev_data)
+        for id1, item in zip(ids, dev_data):
+            assert id1 == item["id"]
+
+        eval_information, eval_metrics = compute_cherrant(
+            ids=ids,
+            src_texts=src_texts,
+            tgt_texts=tgt_texts,
+            predict_texts=predict_texts,
+            device=self.args.device
+        )
+        evaluation_result_file = os.path.join(self.save_dir, 'fcgec_dev_eval.txt')
+        open(evaluation_result_file, 'w').write(eval_information)
+        evaluation_metric_file = os.path.join(self.save_dir, 'fcgec_dev_metrics.json')
+        json.dump(eval_metrics, open(evaluation_metric_file, 'w'), indent=4, ensure_ascii=False)
+
     def basic_saving(self):
         save_path = os.path.join(self.save_dir, f'{self.args.model}-{self.args.dataset}-{self.args.task_mode}.json')
         with codecs.open(save_path, "w", "utf-8") as f:
@@ -376,6 +404,9 @@ class PostProcess:
             if self.args.dataset == 'mucgec_dev' and PostProcessManipulator.mucgec_eval not in self.config.post_process:
                 logger.info(f"Auto Set: You are using mucgec dev set for the test set but you did not include {PostProcessManipulator.mucgec_eval} as a postprocess. Auto added it in the rear.")
                 self.config.post_process.append(PostProcessManipulator.mucgec_eval)      
+            if self.args.dataset == 'fcgec_dev' and PostProcessManipulator.fcgec_eval not in self.config.post_process:
+                logger.info(f"Auto Set: You are using fcgec dev set for the test set but you did not include {PostProcessManipulator.fcgec_eval} as a postprocess. Auto added it in the rear.")
+                self.config.post_process.append(PostProcessManipulator.fcgec_eval) 
             for name in self.config.post_process:
                 # check if it is an allowed processing
                 allowed = False
