@@ -60,7 +60,7 @@ class OpenAIUser(TrainerBeta):
         # load detection results (if exists)
         if self.settings.detection_results:
             logger.info(f"loading first stage detection results from {self.settings.detection_results}")
-            detection_results = json.load(open(self.settings.detection_results[split]))
+            detection_results = json.load(open(self.settings.detection_results))
             # test_dataset is self.dataset['split'], infer train mode: all split will be inferred, infer mode: split=test.
             # check id compatible
             assert len(detection_results) == len(self.dataset[split]), f"Uncompatible detection results from {self.settings.detection_results[split]}"
@@ -70,8 +70,7 @@ class OpenAIUser(TrainerBeta):
             # load detections
             # self.test_dataset_transform(split)
             # assert self.settings.detection_load_way == "masked_text":
-            for i in range(len(detection_results)):
-                self.dataset[split][i]["masked_text"] = detection_results[i]["masked_text"]
+            self.dataset[split] = self.dataset[split].add_column('masked_text', [item["masked_text"] for item in detection_results])
 
             # prompt select
             if self.args.dataset in ['fangzhenggrammar', 'fangzhengspell', 'mucgec', 'fcgec']:
