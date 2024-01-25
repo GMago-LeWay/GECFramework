@@ -73,3 +73,30 @@ python main.py --model bert --task_mode train --dataset augment --device 0
 python main.py --model bert --task_mode test --dataset fangzhengtest --load results/models/train_0/bert-augment.pth --device 2
 
 结果在results/results下生成。
+
+
+# 环境配置
+python>=3.9  
+先创建新的虚拟环境并安装符合你环境的pytorch
+
+pip install -r requirements.txt
+
+为了能够跑得动基于ERRANT的评测，需要安装python2，可以直接用conda创建：  
+conda create --name m2 python=2.7  
+改动postprocess中的PYTHON2_PATH为你安装python2的路径  
+(激活m2环境，使用pip安装nltk：如果用指定的m2评测文件则不需要)
+
+为了进行指定的后处理，还需要安装spacy并下载语言包  
+python -m spacy download en_core_web_sm
+
+改动数据集和模型目录：config.py中的  
+DATA_ROOT_DIR = '/home/liwei/workspace/datasets'  
+MODEL_ROOT_DIR = '/home/liwei/workspace/models'  
+
+后处理中的目录同样需要改动：postprocess.py中的
+CONLL14_M2_FILE = 'utils/m2scorer/official-2014.combined.m2'  
+BEA_DEV_M2_FILE = '../datasets/BEA19_dev/ABCN.dev.gold.bea19.m2'  
+MUCGEC_DEV_M2_FILE = '../datasets/MuCGEC/MuCGEC_dev/valid.gold.m2.char'  
+FCGEC_DEV_FILE = '../datasets/FCGEC/FCGEC_dev/test.json'  
+
+请更改到你的路径

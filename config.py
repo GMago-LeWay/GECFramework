@@ -74,6 +74,8 @@ MODEL_CORR_DATA = {
 
 DATA_ROOT_DIR = '/home/liwei/workspace/datasets'
 MODEL_ROOT_DIR = '/home/liwei/workspace/models'
+# DATA_ROOT_DIR = 'results/datasets'
+# MODEL_ROOT_DIR = 'results/models'
 
 class Config:
     def __init__(self, model: str, dataset: str, tune=False, preconfig=None) -> None:
@@ -1034,23 +1036,28 @@ class Config:
             return default_config
         
     
-    def __OpenAI(self):
+    def __OpenAI(self, tune):
         generation_config = {
             'name': 'openai',
 
             # api settings
             'api_type': "azure",
             'api_key': "agi",
-            'api_base': "http://modelserver.int.sit.xiaohongshu.com",
+            'api_base': "http://modelserver.int.xiaohongshu.com",
             'api_version': "2023-03-15-preview",
 
             # generation settings
-            'max_retry_num': 8,
-            'retry_time': 6,
+            'max_retry_num': 10,
+            'retry_time': 5,
 
+            # detection load settings
+            'detection_results': None,
+            # 'detection_load_way': 'masked_text',
             # gec generation settings
             'en_prompt': "Reply with a corrected version of the input sentence with all grammatical and spelling errors fixed. If there are no errors, reply with a copy of the original sentence.\n\nInput sentence: [TEXT]\nCorrected sentence: ",
             'cn_prompt': "请改正输入语句中的所有语法和拼写错误，输出改正后的语句；如果输入语句没有错误，输出原来的语句。\n\n输入语句：[TEXT]\n改正后的语句：",
+            'en_assisted_prompt': "Reply with a corrected version of the input sentence with all grammatical and spelling errors fixed. If there are no errors, reply with a copy of the original sentence.\nHint: We have detected some possible grammatical errors and replaced every error span with a [MASK] to get a masked sentence, you can reference the masked sentence to give final corrected sentence. If there is no [MASK] in the masked sentence, it means that we have not detected any grammatical errors in the input sentence. \n\nInput sentence: [TEXT]\nMasked Sentence: [MASKED_TEXT]\nCorrected sentence: ",
+            'cn_assisted_prompt': "请改正输入语句中的所有语法和拼写错误，输出改正后的语句；如果输入语句没有错误，输出原来的语句。\n提示：我们已经检测到了一些可能的语法错误并且将每个错误的区间用一个[MASK]替换掉，得到了一个掩码语句，你可以参考这个掩码语句来给出改正后的语句。如果掩码语句中没有[MASK]，则说明我们没有检测到输入语句有语法错误。\n\n输入语句：[TEXT]\n掩码语句：[MASKED_TEXT]\n改正后的语句：",
             'pre_split_length_for_infer': None,
             'post_process': [],
 

@@ -28,9 +28,10 @@ class OpenAICall:
                 retry_flag = -1
                 break
             except Exception as e:
+                logger.info(completion.error)
                 retry_flag += 1
                 time.sleep(self.settings.retry_time)
-                logger.info("Time out of OpenAI, Retrying...")
+                logger.info("ERROR of OpenAI, Retrying...")
                 continue
         if retry_flag >= self.settings.max_retry_num:
             response = "Unable to get output from openai."

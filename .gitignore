@@ -13,6 +13,9 @@ test.py
 myscripts/
 *.arrow
 
+# Mac
+.DS*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

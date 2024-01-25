@@ -14,6 +14,7 @@ en = spacy.load("en_core_web_sm")
 logger = logging.getLogger(__name__)
 
 PYTHON2_PATH = '/data/liwei/anaconda3/envs/m2/bin/python'
+# PYTHON2_PATH = '/Users/liwei12/anaconda3/envs/m2/bin/python'
 
 CN_MARKER_MAP = {
     ',': '，',
@@ -407,6 +408,10 @@ class PostProcess:
             if self.args.dataset == 'fcgec_dev' and PostProcessManipulator.fcgec_eval not in self.config.post_process:
                 logger.info(f"Auto Set: You are using fcgec dev set for the test set but you did not include {PostProcessManipulator.fcgec_eval} as a postprocess. Auto added it in the rear.")
                 self.config.post_process.append(PostProcessManipulator.fcgec_eval) 
+            if self.args.dataset in ['wilocness']:
+                if PostProcessManipulator.en_test not in self.config.post_process and PostProcessManipulator.en_test_py3 not in self.config.post_process:
+                    logger.info(f'Auto Set: You are using conll14 and bea19 united test set but you did not include postprocess function. Auto add {PostProcessManipulator.en_test_py3}.')
+                    self.config.post_process.append(PostProcessManipulator.en_test_py3) 
             for name in self.config.post_process:
                 # check if it is an allowed processing
                 allowed = False
