@@ -1051,7 +1051,8 @@ class Config:
             'retry_time': 5,
 
             # detection load settings
-            'detection_results': None,
+            # 'detection_results': None,
+            'detection_results': 'results/CorrectionGLMDetections/correctionglm-fcgec-train_eval_infer-20240112-1327/test/detection_results.json',
             # 'detection_load_way': 'masked_text',
             # gec generation settings
             'en_prompt': "Reply with a corrected version of the input sentence with all grammatical and spelling errors fixed. If there are no errors, reply with a copy of the original sentence.\n\nInput sentence: [TEXT]\nCorrected sentence: ",

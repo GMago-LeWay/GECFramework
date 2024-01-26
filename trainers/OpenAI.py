@@ -42,6 +42,11 @@ class OpenAIUser(TrainerBeta):
         raise NotImplementedError()
 
     def infer_on_dataset(self, split):
+        assert self.args.task_mode == 'infer', "For openai, Only support infer mode."
+
+        ## set semaphore for openai
+        self.model.set_semaphore(self.semaphore)
+
         # test api
         logger.info("Testing the api...")
         logger.info(self.model.conversation(message='你是谁？', history=[]))
@@ -95,12 +100,13 @@ class OpenAIUser(TrainerBeta):
         results = []
 
         def single_generate(item):
+            self.lock.acquire()
             input_text = prompt.replace('[TEXT]', item['text'])
             if 'masked_text' in item:
                 input_text = input_text.replace('[MASKED_TEXT]', item['masked_text'])
             print(input_text)
+            self.lock.release()
             output = self.model.conversation(message=input_text, history=[]).strip()
-            self.semaphore.release()
 
             if 'label' in item:
                 res = {'id': item['id'], 'src': item['text'], 'tgt': item['label'], 'predict': output}
@@ -114,26 +120,34 @@ class OpenAIUser(TrainerBeta):
             f.flush()
             self.lock.release()
 
-        # parallel generate
-        assert self.args.task_mode == 'infer', "For openai, Only support infer mode."
-        ts = []
-        logger.info("Inferring by GPT-4")
-        for item in tqdm(self.dataset[split]):
-            t = threading.Thread(target=single_generate, args=[item])
-            ts.append(t)
-        for t in tqdm(ts):
-            t.start()
-            time.sleep(0.01)
-            self.semaphore.acquire()
-        for t in tqdm(ts):
-            t.join()
-
-        f.close()
-
         # reorder results
         ordered_results = [None] * len(self.dataset[split])
-        for item in results:
-            ordered_results[order[item['id']]] = item
+
+        # parallel generate until all results are filled
+        while None in ordered_results:
+            inputs = []
+            for i, item in enumerate(ordered_results):
+                if item == None:
+                    inputs.append(self.dataset[split][i])
+            ts = []
+            logger.info("Inferring by GPT-4")
+            for item in inputs:
+                t = threading.Thread(target=single_generate, args=[item])
+                ts.append(t)
+            for t in tqdm(ts):
+                t.start()
+                time.sleep(0.2)
+                self.semaphore.acquire()
+            for t in tqdm(ts):
+                t.join()
+
+            f.close()
+
+            # map to ordered results to check if there is sample unpredicted
+            for item in results:
+                ordered_results[order[item['id']]] = item
+        
+        
         return ordered_results
 
 

@@ -13,7 +13,13 @@ class OpenAICall:
         openai.api_base = config.api_base
         openai.api_version = config.api_version
 
+        self.semaphore = None
+
+    def set_semaphore(self, semaphore):
+        self.semaphore = semaphore
+
     def conversation(self, message, history):
+        assert self.semaphore is not None
         messages = []
         for item1, item2 in history:
             messages.append({"role": "user", "content": item1})
@@ -28,12 +34,15 @@ class OpenAICall:
                 retry_flag = -1
                 break
             except Exception as e:
-                logger.info(completion.error)
+                # logger.info(completion.error)
                 retry_flag += 1
                 time.sleep(self.settings.retry_time)
                 logger.info("ERROR of OpenAI, Retrying...")
                 continue
         if retry_flag >= self.settings.max_retry_num:
             response = "Unable to get output from openai."
+            self.semaphore.release()
             raise TimeoutError()
+        
+        self.semaphore.release()
         return response
