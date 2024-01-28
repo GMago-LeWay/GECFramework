@@ -141,12 +141,12 @@ class OpenAIUser(TrainerBeta):
             for t in tqdm(ts):
                 t.join()
 
-            f.close()
 
             # map to ordered results to check if there is sample unpredicted
             for item in results:
                 ordered_results[order[item['id']]] = item
-        
+
+        f.close()
         
         return ordered_results
 
