@@ -898,10 +898,10 @@ class Config:
             'gradient_accumulation_steps': 8,
             'lr': 2e-5,
             'weight_decay': 1e-4,
-            'epoch': 20,
+            'epoch': 10,
             'train_batch_size': 16,
             'eval_batch_size': 16,
-            'warmup_steps': 100,           # 之前FCGEC训练为100
+            'warmup_steps': 1000,           # 之前FCGEC训练为100
             'lr_scheduler': 'polynomial',
             'save_strategy': 'epoch',
 
@@ -919,8 +919,8 @@ class Config:
             'max_eval_target_length': 256,
 
             # evaluation config
-            'eval_step': 200,        # steps interval of evaluation, None: 1eval/epoch 
-            'save_step': 200,  
+            'eval_step': 2000,        # steps interval of evaluation, None: 1eval/epoch 
+            'save_step': 2000,  
             'eval_key': 'eval_loss',
             'predict_with_generate': False,
 

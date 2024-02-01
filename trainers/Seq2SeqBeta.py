@@ -26,6 +26,8 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, is_offline_mode, send_example_telemetry
 from transformers.utils.versions import require_version
 
+from utils.model_utils import count_trainable_parameters
+
 logger = logging.getLogger(__name__)
 
 class Seq2SeqBetaTrainer(TrainerBeta):
@@ -33,8 +35,12 @@ class Seq2SeqBetaTrainer(TrainerBeta):
         super().__init__(args, settings, model, dataset)
         if 'bart-large-chinese' in settings.pretrained_model:
             self.tokenizer = BertTokenizer.from_pretrained(settings.pretrained_model)
-        else:
+        elif 'bart' in settings.pretrained_model:
             self.tokenizer = BartTokenizer.from_pretrained(settings.pretrained_model)
+        elif 'glm' in settings.pretrained_model:
+            self.tokenizer = AutoTokenizer.from_pretrained(settings.pretrained_model, trust_remote_code=True)
+        else:
+            raise NotImplementedError()
 
         # initialize config for transformers trainer
         self.training_args = Seq2SeqTrainingArguments(
@@ -84,6 +90,8 @@ class Seq2SeqBetaTrainer(TrainerBeta):
 
         # other settings
         self.prefix = self.settings.source_prefix if self.settings.source_prefix is not None else ""
+
+        logger.info("Model Trainable parameters: " + str(count_trainable_parameters(self.model)))
 
     def _hash_data_settings(self):
         pretrained_model = self.settings.pretrained_model
@@ -198,7 +206,10 @@ class Seq2SeqBetaTrainer(TrainerBeta):
                 )
         set_seed(training_args.seed)
         if model.config.decoder_start_token_id is None:
-            raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
+            if 'glm' in self.settings.pretrained_model:
+                model.config.decoder_start_token_id = self.tokenizer.sop_token_id
+            else:
+                raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
         
         # Preprocessing the datasets.
         # We need to tokenize inputs and targets.
@@ -263,14 +274,17 @@ class Seq2SeqBetaTrainer(TrainerBeta):
             return result
         
         # Override the decoding parameters of Seq2SeqTrainer
-        training_args.generation_max_length = (
-            training_args.generation_max_length
-            if training_args.generation_max_length is not None
-            else self.settings.max_eval_target_length
-        )
-        training_args.generation_num_beams = (
-            self.settings.num_beams if self.settings.num_beams is not None else training_args.generation_num_beams
-        )
+        try:
+            training_args.generation_max_length = (
+                training_args.generation_max_length
+                if training_args.generation_max_length is not None
+                else self.settings.max_eval_target_length
+            )
+            training_args.generation_num_beams = (
+                self.settings.num_beams if self.settings.num_beams is not None else training_args.generation_num_beams
+            )
+        except Exception as e:
+            logger.info("Did not set generation max length and beams successfully. (Maybe a problem caused by bart-large from facebook)")
 
         # Initialize our Trainer
         trainer = Seq2SeqTrainer(
@@ -386,3 +400,8 @@ class Seq2SeqBetaTrainer(TrainerBeta):
             path = os.path.join(save_dir, 'pytorch_model.bin')
             information = self.model.load_state_dict(torch.load(path))
             logger.info(information)
+
+    def get_best_checkpoint_dir(self):
+        trainer_state = json.load(open(os.path.join(self.args.save_dir, 'trainer_state.json')))
+        best_model_checkpoint = trainer_state["best_model_checkpoint"]
+        return best_model_checkpoint

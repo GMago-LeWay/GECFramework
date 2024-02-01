@@ -27,7 +27,7 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 from utils.checkpoint_select import get_all_best_checkpoint
-
+from utils.model_utils import count_trainable_parameters
 
 from trainers.base import TrainerBeta
 from dataset_provider.CorrectionGLM import GLMDataProcessor
@@ -156,6 +156,10 @@ class CorrectionGLMTrainer(TrainerBeta):
             resume_from_checkpoint=args.resume,
         )
         logger.info(self.training_args)
+
+        
+        logger.info("Model Trainable parameters: " + str(count_trainable_parameters(self.model)))
+
 
     def _hash_data_settings(self):
         pretrained_model = self.settings.pretrained_model
@@ -626,13 +630,13 @@ class CorrectionGLMTrainer(TrainerBeta):
                 test_data.to(self.args.device)
                 detection_logits = self.model(**test_data).logits['detection']
                 detection_probs = F.softmax(detection_logits, -1)
-                if self.settings.keep_threshold:
+                if self.settings.keep_threshold != None:
                     keep_mask = (detection_probs[:, :, keep_label_id] > self.settings.keep_threshold)*1.
                     detection_probs[:, :, keep_label_id] = keep_mask
-                if self.settings.error_threshold:
+                if self.settings.error_threshold != None:
                     non_error_mask = (detection_probs[:, :, error_label_id] < self.settings.error_threshold)*1.
                     detection_probs[:, :, error_label_id] -= non_error_mask
-                if self.settings.num_labels >= 3 and self.settings.insert_threshold:
+                if self.settings.num_labels >= 3 and self.settings.insert_threshold != None:
                     non_insert_mask = (detection_probs[:, :, insert_label_id] < self.settings.insert_threshold)*1.
                     detection_probs[:, :, insert_label_id] -= non_insert_mask
                 detection_predictions = detection_probs.argmax(-1).tolist()
