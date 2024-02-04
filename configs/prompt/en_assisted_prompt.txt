@@ -1,0 +1,6 @@
+Reply with a corrected version of the input sentence with all grammatical and spelling errors fixed. If there are no errors, reply with a copy of the original sentence.
+Hint: We have detected some possible grammatical errors and replaced every error span with a [MASK] to get a masked sentence, you can reference the masked sentence to give final corrected sentence. If there is no [MASK] in the masked sentence, it means that we have not detected any grammatical errors in the input sentence. 
+
+Input sentence: [TEXT]
+Masked Sentence: [MASKED_TEXT]
+Corrected sentence: 

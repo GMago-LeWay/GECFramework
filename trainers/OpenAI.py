@@ -75,7 +75,27 @@ class OpenAIUser(TrainerBeta):
             # load detections
             # self.test_dataset_transform(split)
             # assert self.settings.detection_load_way == "masked_text":
-            self.dataset[split] = self.dataset[split].add_column('masked_text', [item["masked_text"] for item in detection_results])
+            # CN Marker
+            if self.args.dataset in ['fcgec', 'mucgec']:
+                CN_MARKER_MAP = {
+                    ',': '，',
+                    ';': '；',
+                    ':': '：',
+                    '(': '（',
+                    ')': '）',
+                    '?': '？',
+                    '!': '！',
+                }
+                masked_text_list = []
+                for item in detection_results:
+                    masked_text = item["masked_text"]
+                    for key in CN_MARKER_MAP:
+                        masked_text = masked_text.replace(key, CN_MARKER_MAP[key])
+                    masked_text_list.append(masked_text)
+            else:
+                masked_text_list = [item["masked_text"] for item in detection_results]
+            
+            self.dataset[split] = self.dataset[split].add_column('masked_text', masked_text_list)
 
             # prompt select
             if self.args.dataset in ['fangzhenggrammar', 'fangzhengspell', 'mucgec', 'fcgec']:

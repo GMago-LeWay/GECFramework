@@ -1052,13 +1052,16 @@ class Config:
 
             # detection load settings
             # 'detection_results': None,
-            'detection_results': 'results/CorrectionGLMDetections/correctionglm-fcgec-train_eval_infer-20240112-1327/test/detection_results.json',
+            # 'detection_results': None,
+            # 'detection_results': 'results/CorrectionGLMDetections/correctionglm-wilocness-infer_train-20240112-1416/test/detection_results.json',
+            # 'detection_results': 'results/CorrectionGLMDetections/correctionglm-fcgec-train_eval_infer-20240112-1327/test/detection_results.json',
+            'detection_results': 'results/CorrectionGLMDetections/correctionglm-mucgec-infer_train-20240103-0211/test/detection_results.json',
             # 'detection_load_way': 'masked_text',
             # gec generation settings
-            'en_prompt': "Reply with a corrected version of the input sentence with all grammatical and spelling errors fixed. If there are no errors, reply with a copy of the original sentence.\n\nInput sentence: [TEXT]\nCorrected sentence: ",
-            'cn_prompt': "请改正输入语句中的所有语法和拼写错误，输出改正后的语句；如果输入语句没有错误，输出原来的语句。\n\n输入语句：[TEXT]\n改正后的语句：",
-            'en_assisted_prompt': "Reply with a corrected version of the input sentence with all grammatical and spelling errors fixed. If there are no errors, reply with a copy of the original sentence.\nHint: We have detected some possible grammatical errors and replaced every error span with a [MASK] to get a masked sentence, you can reference the masked sentence to give final corrected sentence. If there is no [MASK] in the masked sentence, it means that we have not detected any grammatical errors in the input sentence. \n\nInput sentence: [TEXT]\nMasked Sentence: [MASKED_TEXT]\nCorrected sentence: ",
-            'cn_assisted_prompt': "请改正输入语句中的所有语法和拼写错误，输出改正后的语句；如果输入语句没有错误，输出原来的语句。\n提示：我们已经检测到了一些可能的语法错误并且将每个错误的区间用一个[MASK]替换掉，得到了一个掩码语句，你可以参考这个掩码语句来给出改正后的语句。如果掩码语句中没有[MASK]，则说明我们没有检测到输入语句有语法错误。\n\n输入语句：[TEXT]\n掩码语句：[MASKED_TEXT]\n改正后的语句：",
+            'en_prompt': open('configs/prompt/en_prompt.txt').read().strip(),
+            'cn_prompt': open('configs/prompt/cn_prompt.txt').read().strip(),
+            'en_assisted_prompt': open('configs/prompt/en_assisted_prompt.txt').read().strip(),
+            'cn_assisted_prompt': open('configs/prompt/cn_assisted_prompt.txt').read().strip(),
             'pre_split_length_for_infer': None,
             'post_process': [],
 
