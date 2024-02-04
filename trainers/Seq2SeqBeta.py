@@ -332,15 +332,22 @@ class Seq2SeqBetaTrainer(TrainerBeta):
         ## save real-time result one by one
         f = open(os.path.join(self.args.save_dir, 'real-time-results.jsonl'), 'w')
         for item in tqdm(self.dataset["test"]):
-            tokenized = self.tokenizer(item["text"])
-            outputs = model.generate(
-                input_ids=torch.tensor(tokenized["input_ids"]).to(self.args.device).unsqueeze(0),
-                # position_ids=torch.tensor(tokenized["position_ids"]).to(self.args.device).unsqueeze(0),
-                max_new_tokens=self.settings.max_gen_len,
-                num_beams=self.settings.num_beams,
-            )
+            if 'glm' in self.settings.pretrained_model:
+                tokenized = self.tokenizer(item["text"]+'[MASK]', return_tensors="pt")
+                inputs = self.tokenizer.build_inputs_for_generation(tokenized, max_gen_length=self.settings.max_gen_len)
+                inputs = inputs.to(self.args.device)
+                outputs = model.generate(**inputs, max_length=self.settings.max_gen_len, eos_token_id=self.tokenizer.eop_token_id)
+            else:
+                tokenized = self.tokenizer(item["text"])
+                outputs = model.generate(
+                    input_ids=torch.tensor(tokenized["input_ids"]).to(self.args.device).unsqueeze(0),
+                    # position_ids=torch.tensor(tokenized["position_ids"]).to(self.args.device).unsqueeze(0),
+                    max_new_tokens=self.settings.max_gen_len,
+                    num_beams=self.settings.num_beams,
+                )
             gen_text = self.tokenizer.decode(outputs[0].tolist(), skip_special_tokens=True)
-            gen_text = gen_text.replace(' ', '')
+            if 'bart-large-chinese' in self.settings.pretrained_model:
+                gen_text = gen_text.replace(' ', '')
             if 'label' in item:
                 res = {"id": item["id"], "src": item["text"], "tgt": item["label"], "predict": gen_text}
             else:

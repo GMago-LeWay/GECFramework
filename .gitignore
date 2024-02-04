@@ -8,7 +8,7 @@ wandb/
 tensorboard/
 *.out
 dataset_provider/old_dataset/**
-test.py
+test*
 **/samples/**
 myscripts/
 *.arrow

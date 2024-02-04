@@ -348,6 +348,10 @@ class CorrectionGLMTrainer(TrainerBeta):
                 for column in columns:
                     if column not in reserved_columns:
                         removed_columns.append(column)
+
+                # temp_saving_data = []
+                # for i in range(100000):
+                #     temp_saving_data.append({"id": self.dataset['train'][i]["id"], "text": self.dataset['train'][i]["text"], "label": self.dataset['train'][i]["label"], "detections": detection_results[i]['detections']})
                 self.train_dataset = self.dataset['train'].map(
                     self._get_train_preprocess_function_using_predictions(for_validation=False),
                     batched=True,
@@ -357,6 +361,14 @@ class CorrectionGLMTrainer(TrainerBeta):
                     num_proc=self.settings.num_proc_trainset,
                     desc="Running preprocessing on train dataset",
                 )
+                # for i in range(100000):
+                #     item = self.train_dataset[i]
+                #     temp_saving_data[i]['input_ids'] = item['input_ids']
+                #     temp_saving_data[i]['input_text'] = self.tokenizer.decode(temp_saving_data[i]['input_ids'])
+                #     temp_saving_data[i]['target_text'] = self.tokenizer.decode(item['target_ids'][item['source_length']:])
+                #     temp_saving_data[i]['detection_labels'] = item['detection_labels']
+                # json.dump(temp_saving_data, open('results_main/examples/examples_SFT2.json', 'w'), ensure_ascii=False, indent=4)
+                
             else:  # Standard train set
                 logger.info("Preparing standard train dataset transform.")
                 columns = self.dataset['train'].column_names
@@ -365,6 +377,11 @@ class CorrectionGLMTrainer(TrainerBeta):
                 for column in columns:
                     if column not in reserved_columns:
                         removed_columns.append(column)
+                
+                # temp_saving_data = []
+                # for i in range(100000):
+                #     temp_saving_data.append({"id": self.dataset['train'][i]["id"], "text": self.dataset['train'][i]["text"], "label": self.dataset['train'][i]["label"]})
+
                 if self.settings.streaming:
                     if self.settings.load_cache:
                         # Standard train set type 1: load cache as streaming dataset
@@ -400,6 +417,14 @@ class CorrectionGLMTrainer(TrainerBeta):
                         num_proc=self.settings.num_proc_trainset,
                         desc="Running preprocessing on train dataset",
                     )
+                # for i in range(100000):
+                #     item = self.train_dataset[i]
+                #     temp_saving_data[i]['input_ids'] = item['input_ids']
+                #     temp_saving_data[i]['input_text'] = self.tokenizer.decode(temp_saving_data[i]['input_ids'])
+                #     temp_saving_data[i]['target_text'] = self.tokenizer.decode(item['target_ids'][item['source_length']:])
+                #     temp_saving_data[i]['detection_labels'] = item['detection_labels']
+                # json.dump(temp_saving_data, open('results_main/examples/examples_SFT1.json', 'w'), ensure_ascii=False, indent=4)
+
         if self.args.task_mode in ["train", "eval"]:
             logger.info("Preparing validation dataset transform...")
             if self.settings.detection_results['valid']:
