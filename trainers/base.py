@@ -65,6 +65,9 @@ class TrainerBeta:
         self.model = model
         self.dataset: Dict[str, Dataset] = dataset
 
+    def reset_dataset(self, new_dataset):
+        self.dataset = new_dataset
+
     def train_dataset_transform(self):
         """
         Transform (transformers) dataset to meet the requirements of model

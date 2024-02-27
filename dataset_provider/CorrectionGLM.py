@@ -83,6 +83,8 @@ class TokenizerBasedTextEditProcessor:
                 # else:
                 max_sentence_length = self.max_sequence_length // 3
         tokens = self.tokenizer.encode(sentence)
+        # null token will be removed
+        tokens = [x for x in tokens if x is not None]
         if max_sentence_length < len(tokens):
             if enable_warning:
                 logger.info(f"Warning: The sentence token length {len(tokens)}, will be cut to {max_sentence_length}")
@@ -696,7 +698,11 @@ class GLMDataProcessor:
             'source_length': 0,
         }
         train_example = self.add_detection_prefix(temp_example, src_tokens=src_tokens, edit_labels=edit_labels)
-        assert train_example['input_ids'].dtype == train_example['input_ids'].dtype == train_example['detection_labels'].dtype == train_example['position_ids'].dtype == int
+        assert train_example['input_ids'].dtype == train_example['target_ids'].dtype == train_example['detection_labels'].dtype == train_example['position_ids'].dtype == int, \
+            f"input_ids({train_example['input_ids'].dtype}): {train_example['input_ids']} \n" + \
+            f"target_ids({train_example['target_ids'].dtype}): {train_example['target_ids']} \n" + \
+            f"detection_labels({train_example['detection_labels'].dtype}): {train_example['detection_labels']} \n" + \
+            f"position_ids({train_example['position_ids'].dtype}): {train_example['position_ids']} \n"
         assert type(train_example['source_length']) == type(train_example['prefix_length']) == type(train_example['prefix_prompt_length']) == int
         return train_example
     

@@ -21,6 +21,7 @@ class TaskMode:
     train = 'train'
     eval = 'eval'
     infer = 'infer'
+    interactive = 'interactive'
     eval_train = 'eval_train'
     infer_train = 'infer_train'
     train_and_infer = 'train_infer'
@@ -71,6 +72,7 @@ import pandas as pd
 import torch
 import transformers
 from transformers import AutoTokenizer
+from datasets import Dataset
 
 # transformers.utils.move_cache('/data/liwei/cache/huggingface/')
 
@@ -419,6 +421,43 @@ class ExperimentsOfGECBeta:
         
         return json_results
     
+    def run_interactive(self, config):
+        # only inferring
+        setup_seed(self.args.seed)
+
+        # model settings
+        model_to_be_init = get_model(model=self.args.model)
+        model = model_to_be_init(self.args, config)
+        train_to_be_init = get_train(model=self.args.model)
+        trainer: TrainerBeta = train_to_be_init(args=self.args, settings=config, model=model, dataset={"train": [], "valid": [], "test": []})
+        trainer.load(self.args.load)
+        logger.info(f"Args: {self.args}; Config: {config}")
+        logger.info(f"Load Checkpoint from {self.args.load} (Ignore when using lora)")
+        logger.info(get_time() + f"Interactive Mode: Use model {config.name} at {self.args.load}. Dataset Args {self.args.dataset} Ineffective.")
+
+        count = 0
+        results = []
+        while True:
+            count += 1
+            logger.info("Input Sentence: ")
+            input_text = input().strip()
+            if input_text == "0":
+                break
+
+            # data settings
+            raw_dataset = {"train": [], "valid": [], "test": Dataset.from_dict({"id": [f"temp{count}"], "text": [input_text]}) }
+            trainer.reset_dataset(raw_dataset)
+
+            json_results = trainer.do_infer()
+            process = PostProcess(self.args, config, json_results, 'test')
+            process.post_process()
+            current_result = process.get_results()
+            assert len(current_result) == 1
+            logger.info(f"Corrected Sentence:\n{ current_result[0]['predict'] }")
+            results.extend(current_result)
+        
+        return results
+    
     def run_combine(self, config):
         assert self.args.task_mode in [TaskMode.train_and_infer, TaskMode.train_and_eval_and_infer]
         original_task_mode = str(self.args.task_mode)
@@ -531,6 +570,9 @@ class ExperimentsOfGECBeta:
         elif self.args.task_mode == TaskMode.custom:
             config = Config(model=self.args.model, dataset=self.args.dataset, preconfig=preset_config).get_config()
             self.run_custom(config=config)
+        elif self.args.task_mode == TaskMode.interactive:
+            config = Config(model=self.args.model, dataset=self.args.dataset, preconfig=preset_config).get_config()
+            self.run_interactive(config=config) 
         else:
             raise NotImplementedError()
 
@@ -672,7 +714,7 @@ if __name__ == '__main__':
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
     setup_log(args)
-    if args.task_mode in ['train', 'tune', 'test', 'infer', 'eval', 'eval_train', 'infer_train', TaskMode.train_and_infer, TaskMode.train_and_eval_and_infer, TaskMode.custom]:
+    if args.task_mode in ['train', 'tune', 'test', 'infer', 'eval', 'eval_train', 'infer_train', TaskMode.train_and_infer, TaskMode.train_and_eval_and_infer, TaskMode.custom, TaskMode.interactive]:
         experiment = EXPERIMENTS[args.model](args)
         experiment.conduct()
     elif args.task_mode in ['augmentation']:

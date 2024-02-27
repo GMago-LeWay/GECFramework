@@ -476,12 +476,16 @@ class CorrectionGLMTrainer(TrainerBeta):
         Transform (transformers) dataset to meet the requirements of model inference of detection task.
         The self.test_dataset will be transformed from self.dataset[split]
         """
+        if self.args.task_mode == 'interactive':
+            load_cache = False
+        else:
+            load_cache = self.settings.load_cache
 
         self.test_dataset = self.dataset[data_split].map(
             self._get_detection_preprocess_function(max_sentence_length=self.settings.max_infer_source_length),
             batched=True,
             remove_columns=[],
-            load_from_cache_file=self.settings.load_cache,
+            load_from_cache_file=load_cache,
             cache_file_name=self._get_data_cache_name(f"{data_split}_for_detection_{self.settings.max_infer_source_length}_split{self.settings.pre_split_length_for_infer}"),
             desc=f"Running detection preprocessing on {data_split} dataset"
         )

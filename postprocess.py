@@ -396,8 +396,7 @@ class PostProcess:
             with zipfile.ZipFile(os.path.join(self.save_dir, 'predict.zip'), mode='w') as zipf:
                 zipf.write(fcgec_path, 'predict.json')
 
-
-    def post_process_and_save(self):
+    def post_process(self):
         if 'post_process' in self.config:
             if 'pre_split_length_for_infer' in self.config and self.config.pre_split_length_for_infer and PostProcessManipulator.merge_sample not in self.config.post_process:
                 logger.info(f"Auto Set: You enable split_sentence for the test set but you did not include {PostProcessManipulator.merge_sample} as a postprocess. Auto added it in the front.")
@@ -423,5 +422,10 @@ class PostProcess:
                     self.post_process_func[name]()
                 else:
                     logger.info(f"Error: Unsupported post process of {name} for {self.args.dataset}. Skipped.")
-                    
+    
+    def post_process_and_save(self):
+        self.post_process()
         self.prediction_saving()
+
+    def get_results(self):
+        return self.results

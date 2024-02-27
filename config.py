@@ -881,7 +881,7 @@ class Config:
 
             # pretrained model
             'language_model': True,
-            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'bart-large-chinese'),      ## not support mBART
+            'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'bart-large'),      ## not support mBART
             'use_lora': False,
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
 
@@ -929,7 +929,7 @@ class Config:
             'load_config_keys': ['source_prefix'],
             'num_beams': 12,
             'max_gen_len': 384,
-            'post_process': [],
+            'post_process': [PPM.en_test_py3],
         }
 
         return NotImplementedError() if tune else Config
