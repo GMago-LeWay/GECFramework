@@ -457,7 +457,7 @@ class CorrectionGLMTrainer(TrainerBeta):
                 )
             else:
                 columns = self.dataset['valid'].column_names
-                reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_length']
+                reserved_columns = ['input_ids', 'target_ids', 'position_ids', 'detection_labels', 'source_length', 'prefix_prompt_length', 'prefix_length']
                 removed_columns = []
                 for column in columns:
                     if column not in reserved_columns:
@@ -470,6 +470,18 @@ class CorrectionGLMTrainer(TrainerBeta):
                     cache_file_name=self._get_data_cache_name(f"valid_{self.settings.max_eval_source_length}"),
                     desc="Running preprocessing on valid dataset"
                 )
+                # temp save validation set detection labels
+                # logger.info("Saving Detection Labels of Dev set...")
+                # detection_results = []
+                # for original_item, item in zip(self.dataset['valid'], self.valid_dataset):
+                #     detection_results.append({
+                #         "id": original_item['id'],
+                #         "source_tokens": item["input_ids"][item['prefix_prompt_length']:item['prefix_length']],
+                #         "masked_text": self.tokenizer.decode(item["input_ids"][item['prefix_length']:item['source_length']][1:-1]),
+                #         "detections": item["detection_labels"][item['prefix_prompt_length']:item['prefix_length']],
+                #     })
+                # json.dump(detection_results, open(os.path.join(self.args.save_dir, 'valid_set_gold_detections.json'), 'w'), ensure_ascii=False, indent=4)
+
 
     def test_dataset_transform(self, data_split='test'):
         """

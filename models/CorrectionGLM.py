@@ -3,6 +3,7 @@ import numpy as np
 import logging
 import wandb
 from peft import PeftModel, LoraConfig, TaskType, get_peft_model
+from collections import OrderedDict
 from transformers import AutoConfig, AutoTokenizer
 from transformers import StoppingCriteria, StoppingCriteriaList
 from utils.GLM.modeling_glm import *
@@ -76,12 +77,16 @@ def GLMForGrammaticalCorrection(args, settings):
             # for n, p in model.named_parameters():
             #     print(n)
             logger.info("construct peft model of glm for GEC...")
+            lora_r = settings.lora_rank
+            lora_alpha = lora_r*2
             peft_config = LoraConfig(
                 task_type=TaskType.SEQ_2_SEQ_LM, 
                 inference_mode=False, 
-                r=8, lora_alpha=32, lora_dropout=0.1,
-                target_modules=['query_key_value']
+                r=lora_r, lora_alpha=lora_alpha, lora_dropout=0.1,
+                target_modules=['query_key_value'],
+                modules_to_save=['cls_dense', 'cls_out_proj']
             )
+            logger.info(f"LoRA default settings: r {lora_r}, alpha {lora_alpha}")
             model = get_peft_model(model, peft_config)
         else:
             logger.info("loading peft model of glm for GEC from checkpoint...")
@@ -123,7 +128,8 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
                 'fce': 'English-CorrectionGLM',
                 'nucle': 'English-CorrectionGLM',
                 'hybrid': 'English-CorrectionGLM',
-                'wilocness': 'WILocness-CorrectionGLM'
+                'wilocness': 'WILocness-CorrectionGLM',
+                'bea_dev': 'WILocness-CorrectionGLM',
             }
             wandb.init(
                 # set the wandb project where this run will be logged
@@ -149,10 +155,10 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
 
         if self.settings.model_type in ['all', 'detection']:
         # Sequence labeling head.
-            self.dense = torch.nn.Linear(config.hidden_size, config.hidden_size, dtype=settings.torch_dtype)
+            self.cls_dense = torch.nn.Linear(config.hidden_size, config.hidden_size, dtype=settings.torch_dtype)
             classifier_dropout = settings.output_dropout_prob
             self.dropout = torch.nn.Dropout(classifier_dropout)
-            self.out_proj = torch.nn.Linear(config.hidden_size, settings.num_labels, dtype=settings.torch_dtype)
+            self.cls_out_proj = torch.nn.Linear(config.hidden_size, settings.num_labels, dtype=settings.torch_dtype)
             # Labeling Loss
             # self.labeling_loss = CrossEntropyLoss(ignore_index=settings.loss_ignore_id, reduction='mean')
             if settings.alpha:
@@ -198,9 +204,9 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
             output_for_detection = self.dropout(outputs)
             if self.loss_detach:
                 output_for_detection = output_for_detection.detach()
-            output_for_detection = torch.tanh(self.dense(output_for_detection))
+            output_for_detection = torch.tanh(self.cls_dense(output_for_detection))
             output_for_detection = self.dropout(output_for_detection)
-            logits = self.out_proj(output_for_detection)
+            logits = self.cls_out_proj(output_for_detection)
             detection_loss = self.labeling_loss(logits.view(-1, self.settings.num_labels), detection_labels.view(-1))
 
             # detection model
@@ -246,3 +252,24 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
                     # weighted_detection_loss = (self.settings.detection_loss_weight * detection_loss).unsqueeze(0) if self.n_gpu > 1 else loss,
                     # glm_loss = lm_loss.unsqueeze(0) if self.n_gpu > 1 else loss,
                 )
+
+    # 自定义load_state_dict方法
+    def load_state_dict(self, state_dict, strict=True):
+        # 创建一个新的state_dict用于映射旧权重名到新权重名
+        new_state_dict = OrderedDict()
+
+        # 遍历旧的state_dict
+        for key, param in state_dict.items():
+            # 根据你的模块名称变更来映射新的权重名
+            if key.startswith('dense'):
+                new_key = key.replace('dense', 'cls_dense')
+            elif key.startswith('out_proj'):
+                new_key = key.replace('out_proj', 'cls_out_proj')
+            else:
+                new_key = key  # 如果没有变化，保持原key
+
+            # 将映射后的权重名和参数添加到新的state_dict中
+            new_state_dict[new_key] = param
+
+        # 使用新的state_dict加载模型
+        super(GLMForGrammaticalCorrectionModel, self).load_state_dict(new_state_dict, strict=strict)
