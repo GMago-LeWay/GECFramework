@@ -32,6 +32,8 @@ class BasicWrapper:
     def _load_json_and_formatted(self, file_path):
         data = json.load(open(file_path))
         if type(data) == list:
+            if len(data) == 0:
+                data = [{'id': 0, 'text': "Placeholder.", 'label': "Placeholder."}]
             assert len(data) != 0
             new_data = {}
             if 'id' not in data[0]:

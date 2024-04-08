@@ -77,8 +77,12 @@ def GLMForGrammaticalCorrection(args, settings):
             # for n, p in model.named_parameters():
             #     print(n)
             logger.info("construct peft model of glm for GEC...")
-            lora_r = settings.lora_rank
-            lora_alpha = lora_r*2
+            if "lora_rank" in settings:
+                lora_r = settings.lora_rank
+                lora_alpha = lora_r*2
+            else:
+                lora_r = 8
+                lora_alpha = 32
             peft_config = LoraConfig(
                 task_type=TaskType.SEQ_2_SEQ_LM, 
                 inference_mode=False, 
@@ -130,6 +134,8 @@ class GLMForGrammaticalCorrectionModel(GLMPreTrainedModel):
                 'hybrid': 'English-CorrectionGLM',
                 'wilocness': 'WILocness-CorrectionGLM',
                 'bea_dev': 'WILocness-CorrectionGLM',
+                'fcgec_dev': 'FCGEC-CorrectionGLM',
+                'mucgec_dev': 'MuCGEC-CorrectionGLM',
             }
             wandb.init(
                 # set the wandb project where this run will be logged
