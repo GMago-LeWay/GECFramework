@@ -2,7 +2,7 @@
     "name": "correctionglm",
     "language_model": true,
     "pretrained_model": "os.path.join(MODEL_ROOT_DIR, 'glm-10b-chinese')",
-    "torch_dtype": "None",
+    "torch_dtype": "torch.bfloat16",
     "use_lora": true,
     "bf16": true,
     "ds_config": null,
