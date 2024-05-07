@@ -468,12 +468,10 @@ class GECToRTrainer(Trainer):
         with torch.no_grad():
             for batch in tqdm(dataloader):
                 batch_size = len(batch['ids'])
-                if mode == 'INFER':
-                    batch_results = [{"id": batch['ids'][i], "src": batch['raw_texts'][i]} for i in range(batch_size)]
-                elif mode == 'TEST':
+                if 'raw_labels' in batch:
                     batch_results = [{"id": batch['ids'][i], "src": batch['raw_texts'][i], "tgt": batch['raw_labels'][i]} for i in range(batch_size)]
                 else:
-                    raise NotImplementedError()
+                    batch_results = [{"id": batch['ids'][i], "src": batch['raw_texts'][i]} for i in range(batch_size)]
                 current_inputs = list(batch['raw_texts'])
                 for _ in range(self.args.iteration):
                     for idx, raw_text in enumerate(current_inputs):
