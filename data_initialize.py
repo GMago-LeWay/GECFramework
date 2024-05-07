@@ -77,13 +77,13 @@ def filter_stg_joint(data_list, limit_num):
     
 
 def filter_fangzhengdapei():
-    save_dir = "/home/liwei/workspace/datasets/FangZhengDapei"
+    save_dir = os.path.join(DATA_ROOT_DIR, "FangZhengDapei")
     joint_save_dir = os.path.join(save_dir, "stg_joint")
     if not os.path.exists(joint_save_dir):
         os.makedirs(joint_save_dir)
     limit = {"train": 550000, "valid": 11000, "test": 11000}
     data_items = []
-    with open(os.path.join("/home/liwei/workspace/datasets/FangZhengAugment", "nonhgm_train_dapei.txt"), 'r') as f:
+    with open(os.path.join(DATA_ROOT_DIR, "FangZhengAugment", "nonhgm_train_dapei.txt"), 'r') as f:
         for item in f.readlines():
             item_content = item.split()
             text, label = item_content[0].strip(), item_content[1].strip()

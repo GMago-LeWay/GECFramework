@@ -1,6 +1,6 @@
 import os
 
-os.environ["HF_DATASETS_CACHE"] = "/data/liwei/cache/"
+# os.environ["HF_DATASETS_CACHE"] = "/data/liwei/cache/"
 
 from typing import List, Dict
 import json
@@ -1634,8 +1634,8 @@ if __name__ == "__main__":
     # config = Config(None, dataset_name, False).get_config()
     # data = get_data(dataset_name)(None, config)
     # data.preprocess_data()
-    import transformers
-    transformers.utils.move_cache('/data/liwei/cache/huggingface/')
+    # import transformers
+    # transformers.utils.move_cache('/data/liwei/cache/huggingface/')
 
     # save wilocness data as json, manually copy validation set to other datasets without dev set
     # class A:
@@ -1646,5 +1646,7 @@ if __name__ == "__main__":
     # data = get_data(args.dataset, args.model)(args, config)
     # dataset_map = data.get_dataset_map()
     # data.save_to_json()
+
+    pass
 
 

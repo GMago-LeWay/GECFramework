@@ -62,7 +62,7 @@ def parse_args():
 ## Set devices before pytorch imported
 args = parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = args.devices
-os.environ["HF_DATASETS_CACHE"] = "/data/liwei/cache/"
+# os.environ["HF_DATASETS_CACHE"] = "/data/liwei/cache/"
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,19 @@ def prediction_saving(args, json_results):
     In infer task, some dataset requires a specific version of results to evaluate, this function will do the formatting.
     """
     save_dir = args.save_dir
+    save_path = os.path.join(save_dir, f'{args.model}-{args.dataset}-{args.task_mode}.json')
+    with codecs.open(save_path, "w", "utf-8") as f:
+        json.dump(json_results, f, ensure_ascii=False, indent=4)
+
+    save_txt = os.path.join(save_dir, f'{args.model}-{args.dataset}-{args.task_mode}.txt')
+    with codecs.open(save_txt, "w", "utf-8") as f:
+        for item in json_results:
+            if "tgt" in item:
+                f.write("%s\t%s\t%s\n" % (item["src"], item["tgt"], item["predict"]))
+            else:
+                f.write("%s\t%s\n" % (item["src"], item["predict"]))
+
+    logger.info(f"Results have been stored in {save_path}.")
     ## MuCGEC output
     if args.dataset == 'mucgec':
         save_txt = os.path.join(save_dir, f'MuCGEC_test.txt')

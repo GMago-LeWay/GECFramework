@@ -1,13 +1,13 @@
 {
     "name": "correctionglm",
     "language_model": true,
-    "pretrained_model": "os.path.join(MODEL_ROOT_DIR, 'glm-large-chinese')",
+    "pretrained_model": "os.path.join(MODEL_ROOT_DIR, 'glm-10b-chinese')",
     "torch_dtype": "None",
-    "use_lora": false,
-    "bf16": false,
+    "use_lora": true,
+    "bf16": true,
     "ds_config": null,
     "load_in_8bit": false,
-    "model_type": "all",
+    "model_type": "generate",
     "num_labels": 3,
     "output_dropout_prob": 0.2,
     "loss_ignore_id": -100,
@@ -24,7 +24,7 @@
     "detection_results": {
         "train": null,
         "valid": null,
-        "test": null
+        "test": "results_fangzheng/correctionglm-fangzhenggrammar-infer_train-20240109-1248/train/detection_results.json"
     },
     "gradient_accumulation_steps": 8,
     "train_batch_size": 12,

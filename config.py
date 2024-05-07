@@ -72,8 +72,8 @@ MODEL_CORR_DATA = {
     'seq2span': 'general',
 }
 
-DATA_ROOT_DIR = '/home/liwei/workspace/datasets'
-MODEL_ROOT_DIR = '/home/liwei/workspace/models'
+DATA_ROOT_DIR = '/data/liwei/datasets'
+MODEL_ROOT_DIR = '/data/liwei/models'
 # DATA_ROOT_DIR = 'results/datasets'
 # MODEL_ROOT_DIR = 'results/models'
 
@@ -481,7 +481,7 @@ class Config:
             # pretrained model
             'language_model': True,
             'pretrained_model': os.path.join(MODEL_ROOT_DIR, 'Llama2-Chinese-7b-Chat'),
-            'lora_model': '/home/liwei/workspace/Llama2-Chinese/train/sft/llama2_mucgec_edit/checkpoint-6000',
+            'lora_model': None,
             'tokenize_style': [1, -1],      # will add [cls] at front and add [sep] at rear
 
             # model config
