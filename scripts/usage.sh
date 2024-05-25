@@ -8,18 +8,14 @@ python main.py --model gector --task_mode infer --dataset mucgec --load results/
 # run pyllama 30B 4bit model
 #
 
-# train correction glm sft1
-python main.py --task_mode train --dataset mucgec --save_root_dir results_glm --load results_glm/correctionglm-pretrain-train-20231120-1615/checkpoint-316000 --devices 0
+# train correction glm （DeCoGLM） sft1
+python main.py --dataset clang8 --task_mode train --save_root_dir results_main --devices 0 --load results_glm/correctionglm-pretrain-train-20231120-1615/checkpoint-316000 --config configs/clang8_correctionglm_sft1.json 
 
 # get train set inference results
-python main.py --task_mode eval_train --dataset mucgec --save_root_dir results_eval --load xxx --devices 0
+python main.py --dataset clang8 --task_mode infer_train --save_root_dir results_eval --devices 0 --load xxx --config configs/clang8_correctionglm_sft1.json 
 
-# train correction glm sft2 (after setting config correctly)
-python main.py --task_mode train --dataset mucgec --save_root_dir results_glm --load xxx --devices 0
+# train correction glm （DeCoGLM） sft2
+python main.py --dataset clang8 --task_mode train --save_root_dir results_main --devices 2 --load results_main/correctionglm-clang8-train_infer-20240114-2117/checkpoint-36000 --config configs/clang8_correctionglm_sft2.json 
 
 # infer on correction glm model
-python main.py --task_mode infer --dataset mucgec --save_root_dir results_infer --load xxx --devices 0
-
-
-# custom mode
-python main.py --dataset wilocness --task_mode custom --save_root_dir results_main --devices 2 --load results_main/correctionglm-clang8-train_infer-20240114-2117/checkpoint-36000 --config configs/clang8_correctionglm_sft2.json 
+python main.py --dataset wilocness --task_mode infer --save_root_dir results_infer --devices 0 --load xxx --config configs/clang8_correctionglm_sft2.json 
