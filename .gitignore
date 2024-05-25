@@ -4,6 +4,7 @@ github/
 results*
 scorers/
 fangzheng/
+knowledge/
 wandb/
 tensorboard/
 *.out
