@@ -2,7 +2,35 @@
 
 | [English](README.md) | [中文](README_cn.md) |
 
-## Functional Description
+## Updates
+
+- 2024/09/14 We release our main model weights. Please refer to `Model` part below.
+- 2024/06/15 Initial version of the GEC Framework.
+
+
+## Model
+We release our DeCoGLM models and GECToR config file here:
+
+https://drive.google.com/drive/folders/1GSYg1NX3BHOOGy-zyxelFkQZXocKzKLS?usp=sharing
+
+As for the usage of DeCoGLM, please refer to **scripts/usage.sh**.
+
+File Description in the Google Cloud:
+
+- EN-SyntheticPretrain: The DeCoGLM model trained by synthetic data C4-200M
+- EN-model: The DeCoGLM model trained by two-stage SFT on CLang8 dataset. 
+  - For inference, please set keep_threshold=0.41 and error_threshold=0.5 and insert_threshold=0.7 for inference to get the best performance on CoNLL14.
+  - please set keep_threshold=0.38 and error_threshold=0.5 and insert_threshold=0.6 for inference to get the best performance on BEA-19.
+- ZH-SyntheticPretrain: The DeCoGLM model trained by our Chinese synthetic data
+- ZH-MuCGEC: The DeCoGLM model trained by two-stage SFT on Lang8 + HSK dataset. 
+  - please set keep_threshold, error_threshold, and insert_threshold to None for inference to get the best performance on MuCGEC.
+- ZH-FCGEC: The DeCoGLM model trained by two-stage SFT on FCGEC train dataset. 
+  - please set keep_threshold, error_threshold, and insert_threshold to None for inference to get the best performance on FCGEC.
+- GECToR: The vocab and edit file for reproduce GECToR. This directory should be put in your MODEL_ROOT_DIR (please refer to the part of `Environment Configuration`)
+  - Reference: https://github.com/taishan1994/Gector_chinese
+
+
+## Simple Description
 
 The system primarily offers three functionalities:
 
@@ -46,6 +74,29 @@ Python >= 3.9
     - `FCGEC_DEV_FILE = '../datasets/FCGEC/FCGEC_dev/test.json'`
 
 Please change to your path.
+
+## Dataset
+
+Due to the license limitation, please process the dataset by yourself and place the dataset in the directory that you set in the `config.py`.
+
+The dataset files usually should contain train.json, valid.json, test.json. And our repo can process json file like the following format:
+```
+[
+    {
+        "id": 0,
+        "text": "It 's difficult answer at the question \" what are you going to do in the future ? \" if the only one who has to know it is in two minds .",
+        "label": "It 's difficult to answer the question \" what are you going to do in the future ? \" if the only one who has to know it is in two minds ."
+    },
+    {
+        "id": 1,
+        "text": "When I was younger I used to say that I wanted to be a teacher , a saleswoman and even a butcher .. I do n't know why .",
+        "label": "When I was younger , I used to say that I wanted to be a teacher , a saleswoman and even a butcher . I do n't know why ."
+    },
+    ...
+]
+```
+
+For every item, "text" is the input (maybe ungrammatical sentence) and "label" is the output (grammatically correct sentence).
 
 ## Program Entry
 

@@ -2,6 +2,31 @@
 
 | [English](README.md) | [中文](README_cn.md) |
 
+## 更新
+- 2024/09/14 我们更新了我们在ACL24文章上的主要模型权重，参见下面的`模型`部分
+- 2024/06/15 初次公开repo
+
+## 模型
+我们公布了我们的DeCoGLM权重，在以下链接中：
+
+https://drive.google.com/drive/folders/1GSYg1NX3BHOOGy-zyxelFkQZXocKzKLS?usp=sharing
+
+至于DeCoGLM模型的使用，请参考**scripts/usage.sh**
+
+云盘中的文件说明：
+
+- EN-SyntheticPretrain: 使用合成数据C4-200M训练的DeCoGLM 
+- EN-model: 在CLang8数据集上使用two-stage SFT训练出的DeCoGLM
+  - 推断时, 请设置keep_threshold=0.41, error_threshold=0.5, insert_threshold=0.7 可以得到CoNLL14测试集上的最佳表现
+  - 推断时, 请设置keep_threshold=0.38, error_threshold=0.5, insert_threshold=0.6 可以得到BEA-19测试集上的最佳表现
+- ZH-SyntheticPretrain: 使用中文合成数据训练的DeCoGLM 
+- ZH-MuCGEC: 在Lang8+HSK中文数据集上使用two-stage SFT训练出的DeCoGLM
+  - 推断时, 请设置keep_threshold, error_threshold, insert_threshold为None, 可以得到MuCGEC测试集上的最佳表现
+- ZH-FCGEC: 在FCGEC训练数据集上使用two-stage SFT训练出的DeCoGLM
+  - 推断时, 请设置keep_threshold, error_threshold, insert_threshold为None, 可以得到FCGEC测试集上的最佳表现
+- GECToR: 用于复现GECToR的词典和标签文件. 这个目录应该被放置在 MODEL_ROOT_DIR (参见 `Environment Configuration` 部分)
+  - 参考来源 https://github.com/taishan1994/Gector_chinese
+
 ## 功能描述
 
 系统主要提供三种功能：
@@ -41,6 +66,30 @@ python>=3.9
         - FCGEC_DEV_FILE = '../datasets/FCGEC/FCGEC_dev/test.json'  
 
 请更改到你的路径
+
+## Dataset
+
+由于license的限制，请自行处理数据集并且将数据集放在你在 `config.py` 中设置的各个目录下。
+
+数据集文件应该包括 train.json, valid.json, test.json. 我们的repo可以处理类似以下格式的数据集json文件：
+```
+[
+    {
+        "id": 0,
+        "text": "It 's difficult answer at the question \" what are you going to do in the future ? \" if the only one who has to know it is in two minds .",
+        "label": "It 's difficult to answer the question \" what are you going to do in the future ? \" if the only one who has to know it is in two minds ."
+    },
+    {
+        "id": 1,
+        "text": "When I was younger I used to say that I wanted to be a teacher , a saleswoman and even a butcher .. I do n't know why .",
+        "label": "When I was younger , I used to say that I wanted to be a teacher , a saleswoman and even a butcher . I do n't know why ."
+    },
+    ...
+]
+```
+
+对于每一项, "text"是输入语句 (可能具有语法错误), "label"是输出语句 (语法正确的句子).
+
 
 ## 程序入口
 
