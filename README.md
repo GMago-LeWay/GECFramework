@@ -102,8 +102,8 @@ For every item, "text" is the input (maybe ungrammatical sentence) and "label" i
 
 Explanation of args parameters in `main.py`:
 
-`--model` The syntax correction model used, currently supports bert/softmaskedbert/stgjoint/seq2seq/seq2edit/gector/llm/chinese_llama/llama/llama_quant/chatglm/correctionglm/seq2seqbeta/seq2span.
-- The main recommended ones are bert/softmaskedbert/stgjoint/gector/correctionglm/seq2seqbeta/seq2span, which basically support both training and inference.
+`--model` The correction model used, currently supports bert/softmaskedbert/stgjoint/seq2seq/seq2edit/gector/llm/chinese_llama/llama/llama_quant/chatglm/correctionglm/seq2seqbeta/seq2span.
+- The main recommended ones are **bert/softmaskedbert/stgjoint/gector/correctionglm/seq2seqbeta/seq2span**, which basically support both training and inference.
 - We plan to build a separate repo for large model error correction later.
 
 `--task_mode` The task to be executed, most support:

@@ -96,7 +96,7 @@ python>=3.9
 main.py的args参数说明：
 
 `--model` 使用的语法纠错模型，现支持bert/softmaskedbert/stgjoint/seq2seq/seq2edit/gector/llm/chinese_llama/llama/llama_quant/chatglm/correctionglm/seq2seqbeta/seq2span.
-- 主要推荐使用的有bert/softmaskedbert/stgjoint/gector/correctionglm/seq2seqbeta/seq2span，基本上既支持训练也支持推断
+- 主要推荐使用的有**bert/softmaskedbert/stgjoint/gector/correctionglm/seq2seqbeta/seq2span**，基本上既支持训练也支持推断
 - 大模型的纠错我们打算在后续新建另一个repo
 
 `--task_mode` 执行的任务，大多数支持：
