@@ -6,6 +6,26 @@
 - 2024/09/14 我们更新了我们在ACL24文章上的主要模型权重，参见下面的`模型`部分
 - 2024/06/15 初次公开repo
 
+## 我们的文章
+[Detection-Correction Structure via General Language Model for Grammatical Error Correction](https://aclanthology.org/2024.acl-long.96/)
+```
+@inproceedings{li-wang-2024-detection,
+    title = "Detection-Correction Structure via General Language Model for Grammatical Error Correction",
+    author = "Li, Wei  and
+      Wang, Houfeng",
+    editor = "Ku, Lun-Wei  and
+      Martins, Andre  and
+      Srikumar, Vivek",
+    booktitle = "Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
+    month = aug,
+    year = "2024",
+    address = "Bangkok, Thailand",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2024.acl-long.96",
+    pages = "1748--1763",
+}
+```
+
 ## 模型
 我们公布了我们的DeCoGLM权重，在以下链接中：
 

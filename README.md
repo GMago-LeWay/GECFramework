@@ -7,6 +7,25 @@
 - 2024/09/14 We release our main model weights. Please refer to `Model` part below.
 - 2024/06/15 Initial version of the GEC Framework.
 
+## Our paper
+[Detection-Correction Structure via General Language Model for Grammatical Error Correction](https://aclanthology.org/2024.acl-long.96/)
+```
+@inproceedings{li-wang-2024-detection,
+    title = "Detection-Correction Structure via General Language Model for Grammatical Error Correction",
+    author = "Li, Wei  and
+      Wang, Houfeng",
+    editor = "Ku, Lun-Wei  and
+      Martins, Andre  and
+      Srikumar, Vivek",
+    booktitle = "Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
+    month = aug,
+    year = "2024",
+    address = "Bangkok, Thailand",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2024.acl-long.96",
+    pages = "1748--1763",
+}
+```
 
 ## Model
 We release our DeCoGLM models and GECToR config file here:
